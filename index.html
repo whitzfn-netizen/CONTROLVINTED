@@ -1,0 +1,1704 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Control de cuentas Vinted</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: cabecera con acciones · indicadores (dinero total destacado) · panorama con gráficos · fichas visuales por cuenta (o tabla) · ficha de detalle por pestañas */
+:root{
+  --bg:#0e1013; --bg-2:#13161a; --card:#1a1d22; --card-2:#22262c; --line:#2b3037; --line-2:#363c45;
+  --fg:#e9ebee; --fg-2:#b6bdc6; --muted:#848d98;
+  --green:#3ecf8e; --green-bg:rgba(62,207,142,.12);
+  --red:#f26d6d; --red-bg:rgba(242,109,109,.12);
+  --blue:#62adf7; --blue-bg:rgba(98,173,247,.12);
+  --orange:#f5a14a; --orange-bg:rgba(245,161,74,.13);
+  --grey-bg:rgba(160,170,182,.12);
+  --primary:#f1f3f5; --primary-fg:#0e1013;
+  --shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 8px 24px -12px rgba(0,0,0,.55);
+  --f-display:"Sora", "Segoe UI", system-ui, sans-serif;
+  --f-body:"Instrument Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --r:14px;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+#formAlert:empty,#formVault:empty{display:none}
+html,body{background:var(--bg)}
+body{color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));padding-block:20px 48px}
+.wrap{max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--f-mono);font-size:.92em;letter-spacing:.01em}
+.muted{color:var(--muted)}
+svg.i{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+svg.i.s{width:15px;height:15px}
+
+/* Cabecera */
+header.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.brand h1{font-family:var(--f-display);font-weight:600;font-size:clamp(22px,2.6vw,28px);letter-spacing:-.02em;margin:0;text-wrap:balance}
+.brand p{margin:6px 0 0;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 10px;border-radius:99px;background:var(--card);border:1px solid var(--line);color:var(--fg-2)}
+.badge .dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.badge.ok .dot{background:var(--green)} .badge.warn .dot{background:var(--orange)}
+button.badge{cursor:pointer} button.badge:hover{border-color:var(--line-2);color:var(--fg)}
+button.badge.unlocked{border-color:rgba(62,207,142,.45);color:var(--green)}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:10px;padding:9px 14px;border:1px solid var(--line-2);background:var(--card);font-weight:500;transition:background .15s,border-color .15s,transform .1s;white-space:nowrap}
+.btn:hover{background:var(--card-2);border-color:#46505b}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:var(--primary);color:var(--primary-fg);border-color:var(--primary);font-weight:600;box-shadow:0 6px 20px -8px rgba(241,243,245,.35)}
+.btn.primary:hover{background:#fff}
+.btn.danger{background:var(--red);border-color:var(--red);color:#1a0b0b;font-weight:600}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--fg-2)}
+.btn.ghost:hover{background:var(--card);border-color:var(--line)}
+.btn.sm{padding:6px 10px;font-size:13px;border-radius:8px}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+
+/* Indicadores */
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:10px;min-width:0}
+.kpi .head{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--fg-2);font-size:12.5px;font-weight:500;letter-spacing:.02em}
+.ico{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;background:var(--card-2);color:var(--fg-2);flex:none}
+.ico.g{background:var(--green-bg);color:var(--green)} .ico.r{background:var(--red-bg);color:var(--red)}
+.ico.b{background:var(--blue-bg);color:var(--blue)} .ico.o{background:var(--orange-bg);color:var(--orange)}
+.kpi .val{font-family:var(--f-display);font-weight:600;font-size:clamp(22px,2.2vw,28px);letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.kpi .sub{color:var(--muted);font-size:12.5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.kpi.hero{grid-column:span 2;background:linear-gradient(160deg,#1e2228 0%,#181b20 70%);border-color:var(--line-2)}
+.kpi.hero .val{font-size:clamp(30px,3.6vw,42px)}
+.split{display:flex;height:8px;border-radius:99px;overflow:hidden;background:var(--card-2)}
+.split span{display:block;height:100%}
+.split .w{background:var(--green)} .split .p{background:var(--orange)}
+.legend{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:12.5px;color:var(--fg-2)}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:1px}
+.c-g{color:var(--green)} .c-r{color:var(--red)} .c-b{color:var(--blue)} .c-o{color:var(--orange)}
+.link-btn{background:none;border:0;padding:0;color:var(--blue);font-size:12.5px;text-decoration:underline;text-underline-offset:3px}
+
+/* Panorama */
+.overview{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:12px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);min-width:0}
+.chart{padding:16px 18px;display:flex;flex-direction:column;gap:14px}
+.chart-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.chart-h h2{font-family:var(--f-display);font-size:15px;font-weight:600;margin:0;letter-spacing:-.01em}
+.chart-h span{font-size:12.5px;color:var(--muted)}
+.bars{display:flex;flex-direction:column;gap:9px;margin:0;padding:0;list-style:none}
+.bars li{display:grid;grid-template-columns:minmax(70px,150px) minmax(0,1fr) auto;gap:12px;align-items:center;font-size:13px}
+.bars button{all:unset;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg-2)}
+.bars button:hover{color:var(--fg)}
+.bars button:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:3px}
+.track{height:12px;border-radius:4px;background:var(--bg-2);overflow:hidden;display:flex}
+.track span{height:100%}
+.track .w{background:var(--green)} .track .p{background:var(--orange)}
+.bars .amt{font-weight:600}
+.stack-row{display:flex;flex-direction:column;gap:7px}
+.stack-row .lab{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--fg-2)}
+.stack{display:flex;height:12px;border-radius:4px;overflow:hidden;background:var(--bg-2);gap:2px}
+.stack span{height:100%}
+.callout{display:flex;align-items:center;gap:12px;border:1px dashed var(--line-2);border-radius:12px;padding:10px 12px;font-size:13px;color:var(--fg-2)}
+.callout b{color:var(--fg)}
+.callout .btn{margin-left:auto}
+
+/* Barra de filtros */
+.toolbar{display:flex;flex-direction:column;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.search{position:relative;flex:1 1 260px;min-width:0}
+.search svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted)}
+.field{background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:9px 12px;min-width:0;width:100%}
+.search .field{padding-left:36px}
+.field:focus{border-color:var(--blue);outline:none}
+.field:disabled{opacity:.55;cursor:not-allowed}
+.chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;min-width:0}
+.chips::-webkit-scrollbar{display:none}
+.chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:transparent;border-radius:99px;padding:6px 12px;font-size:13px;color:var(--fg-2);white-space:nowrap}
+.chip .n{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.chip:hover{border-color:var(--line-2);color:var(--fg)}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.chip[aria-pressed="true"] .n{color:#4b525b}
+.chip .d{width:7px;height:7px;border-radius:50%}
+.ctl{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--muted);letter-spacing:.03em;text-transform:uppercase;flex:1 1 150px;min-width:0}
+.ctl select,.ctl input{text-transform:none;letter-spacing:0;font-size:13.5px;color:var(--fg)}
+.more-filters{display:flex;gap:10px;flex-wrap:wrap;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg-2)}
+.more-filters .field{background:var(--card)}
+.seg-switch{display:inline-flex;border:1px solid var(--line);border-radius:10px;padding:3px;background:var(--bg-2)}
+.seg-switch button{border:0;background:transparent;border-radius:7px;padding:6px 10px;display:inline-flex;gap:6px;align-items:center;color:var(--muted);font-size:13px}
+.seg-switch button[aria-pressed="true"]{background:var(--card-2);color:var(--fg)}
+.icon-btn{display:inline-grid;place-items:center;width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--bg-2);color:var(--fg-2);flex:none}
+.icon-btn:hover{color:var(--fg);border-color:var(--line-2)}
+.icon-btn.sm{width:32px;height:32px;border-radius:8px;background:transparent;border-color:transparent}
+.icon-btn.sm:hover{background:var(--card-2);border-color:var(--line)}
+.icon-btn.del:hover{color:var(--red)}
+.sortbox{display:flex;gap:6px;flex:0 1 250px;min-width:0}
+.meta-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:12.5px}
+.toggle{display:inline-flex;align-items:center;gap:7px;background:none;border:1px solid var(--line);border-radius:99px;padding:5px 11px;color:var(--fg-2);font-size:12.5px}
+.toggle[aria-pressed="true"]{border-color:var(--blue);color:var(--blue)}
+.filter-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--blue)}
+
+/* Fichas de cuenta */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px;padding:14px}
+.acard{background:var(--bg-2);border:1px solid var(--line);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:14px;cursor:pointer;transition:border-color .15s,transform .15s;position:relative;overflow:hidden;min-width:0}
+.acard::before{content:"";position:absolute;inset:0 0 auto;height:3px;background:var(--st,var(--line-2))}
+.acard:hover{border-color:var(--line-2);transform:translateY(-1px)}
+.ac-top{display:flex;gap:12px;align-items:flex-start}
+.avatar{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;font-family:var(--f-display);font-weight:600;font-size:15px;flex:none;letter-spacing:.02em}
+.ac-id{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.ac-id h3{margin:0;font-family:var(--f-display);font-size:16px;font-weight:600;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.handle{font-size:13px;color:var(--blue);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ac-money{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.ac-money div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ac-money .l{font-size:11.5px;color:var(--muted)}
+.ac-money b{font-variant-numeric:tabular-nums;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac-money .tot b{font-size:16px;font-weight:700}
+.ac-info{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--fg-2)}
+.ac-info li{display:flex;align-items:center;gap:9px;min-width:0;flex-wrap:wrap}
+.ac-info li>svg{color:var(--muted)}
+.ac-info .txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto}
+.ac-foot{display:flex;align-items:center;gap:6px;border-top:1px solid var(--line);padding-top:12px;flex-wrap:wrap}
+.qbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:5px 9px;font-size:12.5px;color:var(--fg-2)}
+.qbtn:hover{color:var(--fg);border-color:var(--line-2)}
+.qbtn[disabled]{opacity:.4;cursor:not-allowed}
+.ring{--p:0;width:30px;height:30px;border-radius:50%;background:conic-gradient(var(--rc,var(--green)) calc(var(--p)*1%),var(--card-2) 0);display:grid;place-items:center;margin-left:auto;flex:none}
+.ring span{width:22px;height:22px;border-radius:50%;background:var(--bg-2);display:grid;place-items:center;font-size:10px;font-weight:600;color:var(--fg-2)}
+.dotl{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600}
+.dotl::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+
+/* Tabla */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:1180px}
+th{font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--bg-2)}
+th.r,td.r{text-align:right}
+th button{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+th button:hover{color:var(--fg)}
+th button:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:4px}
+th .arr{opacity:.35;font-size:10px}
+th.sorted{color:var(--fg)} th.sorted .arr{opacity:1}
+td{padding:12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr{transition:background .12s;cursor:pointer}
+tbody tr:hover{background:rgba(255,255,255,.025)}
+tbody tr:last-child td{border-bottom:0}
+.acc-name{font-weight:600;font-size:14.5px;display:block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sim{display:flex;flex-direction:column;gap:3px}
+.op{display:inline-flex;width:max-content;font-size:11.5px;font-weight:600;letter-spacing:.02em;color:var(--blue);background:var(--blue-bg);padding:2px 7px;border-radius:6px}
+.amt{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:500}
+.amt.zero{color:var(--muted);font-weight:400}
+.amt.total{font-weight:700;color:var(--fg)}
+.notes{color:var(--fg-2);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.date{white-space:nowrap;color:var(--fg-2)}
+.acts{display:flex;gap:2px;justify-content:flex-end}
+
+/* Etiquetas de estado (editables) */
+.pill{appearance:none;-webkit-appearance:none;border:1px solid transparent;border-radius:99px;padding:4px 26px 4px 22px;font-size:12.5px;font-weight:600;cursor:pointer;
+  background-repeat:no-repeat;background-position:right 8px center,left 9px center;background-size:9px 9px,7px 7px;max-width:100%;flex:none}
+.pill-static{display:inline-flex;align-items:center;gap:7px;border-radius:99px;padding:4px 11px;font-size:12.5px;font-weight:600}
+.pill-static::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.t-g{color:var(--green);background-color:var(--green-bg)}
+.t-r{color:var(--red);background-color:var(--red-bg)}
+.t-b{color:var(--blue);background-color:var(--blue-bg)}
+.t-o{color:var(--orange);background-color:var(--orange-bg)}
+.t-n{color:var(--fg-2);background-color:var(--grey-bg)}
+.dotl.t-g,.dotl.t-r,.dotl.t-n,.dotl.t-b{background:none}
+.dotl.t-n{color:var(--muted)}
+.pill.t-g{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%233ecf8e' stroke-width='1.6'/%3E%3C/svg%3E"),radial-gradient(circle,var(--green) 60%,transparent 64%)}
+.pill.t-r{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%23f26d6d' stroke-width='1.6'/%3E%3C/svg%3E"),radial-gradient(circle,var(--red) 60%,transparent 64%)}
+.pill.t-b{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%2362adf7' stroke-width='1.6'/%3E%3C/svg%3E"),radial-gradient(circle,var(--blue) 60%,transparent 64%)}
+.pill.t-n{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%23b6bdc6' stroke-width='1.6'/%3E%3C/svg%3E"),radial-gradient(circle,var(--fg-2) 60%,transparent 64%)}
+.pill option{background:var(--card);color:var(--fg)}
+
+/* Estados vacíos */
+.empty{padding:56px 20px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px}
+.empty h3{font-family:var(--f-display);font-weight:600;font-size:18px;margin:0}
+.empty p{margin:0;color:var(--muted);max-width:50ch}
+.empty .row{justify-content:center;margin-top:8px}
+.empty .badge-i{width:52px;height:52px;border-radius:14px;display:grid;place-items:center;background:var(--card-2);color:var(--fg-2);margin-bottom:6px}
+.empty .badge-i svg{width:24px;height:24px}
+.steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:720px;width:100%;margin-top:14px;text-align:left}
+.steps div{background:var(--bg-2);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--fg-2)}
+.steps b{color:var(--fg);display:block;margin-bottom:2px}
+.loading{padding:56px 20px;text-align:center;color:var(--muted)}
+
+/* Modales y panel lateral */
+.scrim{position:fixed;inset:0;background:rgba(5,6,8,.62);backdrop-filter:blur(3px);z-index:40;display:flex;align-items:center;justify-content:center;
+  padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));animation:fade .15s ease}
+@keyframes fade{from{opacity:0}}
+@keyframes rise{from{transform:translateY(10px);opacity:0}}
+@keyframes slide{from{transform:translateX(24px);opacity:0}}
+.modal{background:var(--card);border:1px solid var(--line-2);border-radius:18px;width:min(720px,100%);max-height:100%;overflow:auto;box-shadow:0 30px 80px -20px rgba(0,0,0,.7);animation:rise .18s ease}
+.modal.wide{width:min(880px,100%)}
+.modal.narrow{width:min(460px,100%)}
+.modal-h{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card);z-index:2}
+.modal-h h2{font-family:var(--f-display);font-weight:600;font-size:18px;margin:0;letter-spacing:-.01em;overflow-wrap:anywhere}
+.modal-b{padding:18px 20px;display:flex;flex-direction:column;gap:16px}
+.modal-f{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--line);position:sticky;bottom:0;background:var(--card);flex-wrap:wrap;z-index:2}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.fg{display:flex;flex-direction:column;gap:6px;min-width:0}
+.fg.full{grid-column:1/-1}
+.fg label,.fg .lbl{font-size:12.5px;font-weight:500;color:var(--fg-2);display:flex;align-items:center;gap:6px}
+.fg .hint{font-size:12px;color:var(--muted)}
+.fg .err{font-size:12px;color:var(--red)}
+.fg .err:empty{display:none}
+.fg.bad .field{border-color:var(--red)}
+.lock-tag{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--green);background:var(--green-bg);border-radius:5px;padding:1px 6px}
+.money-in,.pw{position:relative}
+.money-in .field{padding-right:30px;text-align:right;font-variant-numeric:tabular-nums}
+.money-in span{position:absolute;right:11px;top:50%;transform:translateY(-50%);color:var(--muted)}
+.pw .field{padding-right:42px;font-family:var(--f-mono);font-size:13.5px}
+.pw button{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--muted);width:34px;height:34px;border-radius:8px;display:grid;place-items:center}
+.pw button:hover{color:var(--fg)}
+textarea.field{resize:vertical;min-height:84px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label{border:1px solid var(--line);border-radius:99px;padding:6px 12px;font-size:13px;cursor:pointer;color:var(--fg-2);display:inline-flex;align-items:center;gap:7px}
+.seg label::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.seg label.g::before{background:var(--green)} .seg label.r::before{background:var(--red)} .seg label.b::before{background:var(--blue)} .seg label.n::before{background:var(--fg-2)}
+.seg input:checked+label{border-color:var(--fg-2);color:var(--fg);background:var(--card-2)}
+.seg input:focus-visible+label{outline:2px solid var(--blue);outline-offset:2px}
+.fsec{display:flex;flex-direction:column;gap:14px;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--bg-2);scroll-margin-top:120px}
+.fsec .field{background:var(--card)}
+.fsec-h{display:flex;gap:12px;align-items:center}
+.fsec-h h3{margin:0;font-family:var(--f-display);font-size:15px;font-weight:600}
+.fsec-h p{margin:0;font-size:12.5px;color:var(--muted)}
+.fnav{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:10px 20px;border-bottom:1px solid var(--line);position:sticky;top:61px;background:var(--card);z-index:2}
+.fnav::-webkit-scrollbar{display:none}
+.fnav a{white-space:nowrap;font-size:12.5px;color:var(--fg-2);text-decoration:none;border:1px solid var(--line);border-radius:99px;padding:5px 11px}
+.fnav a:hover{color:var(--fg);border-color:var(--line-2)}
+.alert{border-radius:10px;padding:10px 12px;font-size:13px;display:flex;gap:10px;align-items:flex-start}
+.alert.o{background:var(--orange-bg);color:var(--orange)}
+.alert.r{background:var(--red-bg);color:var(--red)}
+.alert.b{background:var(--blue-bg);color:var(--blue)}
+.alert.g{background:var(--green-bg);color:var(--green)}
+.alert p{margin:0;color:var(--fg)}
+.alert ul{margin:4px 0 0;padding-left:18px;color:var(--fg)}
+.preview-total{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;color:var(--fg-2);font-size:13px;flex-wrap:wrap}
+.preview-total b{color:var(--fg);font-variant-numeric:tabular-nums;font-size:15px}
+
+/* Bóveda */
+.vault{display:flex;flex-direction:column;gap:10px;border:1px solid rgba(62,207,142,.3);background:linear-gradient(160deg,rgba(62,207,142,.07),transparent 70%);border-radius:14px;padding:14px}
+.vault-h{display:flex;gap:12px;align-items:flex-start}
+.vault-h b{display:block;font-size:14px}
+.vault-h p{margin:2px 0 0;font-size:12.5px;color:var(--fg-2)}
+.vault .row .field{flex:1 1 180px;width:auto}
+.vault .err{font-size:12.5px;color:var(--red)}
+.vault .err:empty{display:none}
+
+.drawer-scrim{justify-content:flex-end;align-items:stretch;padding:0}
+.drawer{background:var(--bg-2);border-left:1px solid var(--line-2);width:min(560px,100%);height:100%;overflow:auto;animation:slide .2s ease;display:flex;flex-direction:column;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);padding-right:env(safe-area-inset-right,0px)}
+.drawer .modal-h,.drawer .modal-f{background:var(--bg-2)}
+.drawer .modal-b{flex:1}
+.d-hero{display:flex;gap:14px;align-items:center}
+.d-hero .avatar{width:56px;height:56px;font-size:19px;border-radius:16px}
+.d-hero .nm{font-family:var(--f-display);font-size:21px;font-weight:600;letter-spacing:-.015em;overflow-wrap:anywhere;margin:0}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none;margin:0 -20px;padding:0 20px}
+.tabs::-webkit-scrollbar{display:none}
+.tabs button{border:0;background:none;padding:10px 12px;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;display:inline-flex;gap:7px;align-items:center}
+.tabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--fg)}
+.tabs button:hover{color:var(--fg)}
+.d-sec{display:flex;flex-direction:column;gap:10px}
+.d-sec h4{margin:0;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.figs{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fig{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.fig .l{font-size:12px;color:var(--muted)}
+.fig .v{font-family:var(--f-display);font-weight:600;font-size:20px;font-variant-numeric:tabular-nums;letter-spacing:-.01em;overflow-wrap:anywhere}
+.fig.total{grid-column:1/-1;background:linear-gradient(160deg,#20242a,#1a1d22);gap:8px}
+.fig.total .v{font-size:28px}
+.fig.est{grid-column:1/-1;border-style:dashed;border-color:rgba(98,173,247,.45);background:transparent}
+.fig .tag{display:inline-block;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--blue);background:var(--blue-bg);border-radius:5px;padding:1px 6px;margin-left:6px;vertical-align:2px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:13.5px;margin:0}
+.kv dt{color:var(--muted)} .kv dd{margin:0;text-align:right}
+.note-box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--fg-2)}
+.cred{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.cred-h{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);font-weight:600}
+.srow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+.srow:last-child{border-bottom:0}
+.srow .l{font-size:12px;color:var(--muted);grid-column:1}
+.srow .v{grid-column:1;font-size:14px;overflow-wrap:anywhere;min-width:0}
+.srow .v.secret{font-family:var(--f-mono);letter-spacing:.04em}
+.srow .b{grid-column:2;grid-row:1/span 2;display:flex;gap:2px}
+.timeline{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.timeline li{position:relative;padding:0 0 14px 20px;font-size:13px}
+.timeline li::before{content:"";position:absolute;left:4px;top:6px;width:7px;height:7px;border-radius:50%;background:var(--blue)}
+.timeline li::after{content:"";position:absolute;left:7px;top:16px;bottom:0;width:1px;background:var(--line)}
+.timeline li:last-child::after{display:none}
+.timeline .when{color:var(--muted);font-size:12px}
+.timeline .chg{color:var(--fg-2)}
+.timeline .chg b{color:var(--fg);font-weight:500}
+
+.toasts{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:60;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;width:max-content;max-width:calc(100% - 32px)}
+.toast{background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:500;box-shadow:0 12px 30px -10px rgba(0,0,0,.6);animation:rise .18s ease}
+.toast.err{background:var(--red);color:#1a0b0b}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.import-list{max-height:180px;overflow:auto;background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:12.5px;color:var(--fg-2);margin:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+.check{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.check input{margin-top:3px}
+
+@media (max-width:1080px){ .kpis{grid-template-columns:repeat(2,minmax(0,1fr))} .overview{grid-template-columns:1fr} }
+@media (max-width:780px){
+  .table-wrap{overflow:visible}
+  table{min-width:0}
+  thead{display:none}
+  table,tbody{display:block}
+  tbody{display:flex;flex-direction:column;gap:10px;padding:12px}
+  tbody tr{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--bg-2)}
+  td{padding:0;border:0;display:flex;flex-direction:column;gap:3px;min-width:0}
+  td.r{text-align:left}
+  td[data-label]::before{content:attr(data-label);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+  td.c-name{grid-column:1/-1;order:-2}
+  td.c-acts{grid-column:1/-1;order:20;border-top:1px solid var(--line);padding-top:8px}
+  td.c-notes{grid-column:1/-1}
+  td.c-notes.blank{display:none}
+  .acts{justify-content:flex-start}
+  .acc-name,.notes{max-width:100%;white-space:normal}
+  .steps{grid-template-columns:1fr}
+  .cards{grid-template-columns:1fr;padding:12px}
+}
+@media (max-width:560px){
+  .grid2{grid-template-columns:1fr}
+  .kpi{padding:14px}
+  .kpi .val{font-size:22px}
+  .actions{width:100%}
+  .actions .btn.primary{flex:1 1 100%}
+  .modal{border-radius:16px}
+  .sortbox{flex:1 1 100%}
+  .bars li{grid-template-columns:minmax(60px,96px) minmax(0,1fr) auto;gap:8px}
+  .fnav{top:57px}
+}
+@media (max-width:340px){ .kpis{grid-template-columns:1fr} .kpi.hero{grid-column:auto} }
+@media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Control de cuentas Vinted</h1>
+      <p><span id="storeBadge" class="badge"><span class="dot"></span><span>Conectando…</span></span><button id="vaultBadge" class="badge" type="button" hidden></button><span id="updatedAt"></span></p>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="btnImport" type="button"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Importar CSV</button>
+      <button class="btn ghost" id="btnExport" type="button"><svg class="i" viewBox="0 0 24 24"><path d="M12 15V3m0 0L8 7m4-4 4 4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Exportar CSV</button>
+      <button class="btn primary" id="btnAdd" type="button"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Añadir cuenta</button>
+      <input type="file" id="fileInput" accept=".csv,text/csv,text/plain" hidden>
+    </div>
+  </header>
+
+  <section class="kpis" id="kpis" aria-label="Resumen"></section>
+  <section class="overview" id="overview" aria-label="Panorama" hidden></section>
+
+  <section class="panel" aria-label="Cuentas">
+    <div class="toolbar">
+      <div class="row">
+        <div class="search">
+          <svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <label class="sr" for="q">Buscar</label>
+          <input id="q" class="field" type="search" placeholder="Buscar por cuenta, usuario de Vinted, correo o teléfono" autocomplete="off">
+        </div>
+        <div class="sortbox">
+          <label class="sr" for="sortBy">Ordenar por</label>
+          <select id="sortBy" class="field">
+            <option value="registeredAt">Fecha de registro</option>
+            <option value="total">Dinero total</option>
+            <option value="pending">Saldo pendiente</option>
+            <option value="withdrawn">Saldo retirado</option>
+            <option value="name">Nombre de cuenta</option>
+          </select>
+          <button class="icon-btn" id="sortDir" type="button" aria-label="Cambiar orden"></button>
+        </div>
+        <button class="btn" id="btnMore" type="button" aria-expanded="false"></button>
+        <div class="seg-switch" role="group" aria-label="Vista">
+          <button type="button" data-view="cards" aria-pressed="true"><svg class="i s" viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg>Fichas</button>
+          <button type="button" data-view="table" aria-pressed="false"><svg class="i s" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>Tabla</button>
+        </div>
+      </div>
+      <div class="more-filters" id="moreFilters" hidden>
+        <label class="ctl">Operador<select id="fOp" class="field"><option value="">Todos</option></select></label>
+        <label class="ctl">Estado de la SIM<select id="fSim" class="field"><option value="">Todos</option><option value="activa">SIM activa</option><option value="bloqueada">SIM bloqueada</option><option value="baja">SIM de baja</option></select></label>
+        <label class="ctl">Registro desde<input id="fFrom" type="date" class="field"></label>
+        <label class="ctl">Registro hasta<input id="fTo" type="date" class="field"></label>
+      </div>
+      <div class="chips" id="chips" role="toolbar" aria-label="Filtros rápidos"></div>
+      <div class="meta-row">
+        <span id="resultCount"></span>
+        <div class="row">
+          <button class="link-btn" id="clearFilters" type="button" hidden>Quitar filtros</button>
+          <button class="toggle" id="togglePrivate" type="button" aria-pressed="false"><svg class="i s" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg><span>Mostrar teléfonos y correos</span></button>
+        </div>
+      </div>
+    </div>
+    <div id="listArea"><div class="loading">Cargando tus cuentas…</div></div>
+  </section>
+</div>
+<div id="layer"></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+(() => {
+'use strict';
+/* ---------- Utilidades ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const EUR = new Intl.NumberFormat('es-ES', {style:'currency', currency:'EUR'});
+const PLAIN = new Intl.NumberFormat('es-ES', {minimumFractionDigits:2, maximumFractionDigits:2, useGrouping:false});
+const money = c => EUR.format((Number(c) || 0) / 100);
+const moneyPlain = c => PLAIN.format((Number(c) || 0) / 100);
+const MAX_CENTS = 100000000 * 100;
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+const fmtDate = iso => { if (!iso) return '—'; const [y,m,d] = String(iso).slice(0,10).split('-'); return d ? `${d}/${m}/${y}` : iso; };
+const fmtDateTime = iso => { try { return new Date(iso).toLocaleString('es-ES', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}); } catch { return iso; } };
+const daysSince = iso => { if (!iso) return null; const d = new Date(iso + 'T00:00:00'); return Math.floor((Date.now() - d.getTime()) / 86400000); };
+const newId = () => 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+const small = svg => svg.replace('class="i"', 'class="i s"');
+
+/** Importe en formato español o con punto decimal → céntimos (entero). null si no es válido. */
+function parseMoney(v) {
+  let s = String(v ?? '').trim().replace(/[€\s ]/g, '');
+  if (s === '') return 0;
+  if (!/^\d[\d.,]*$/.test(s)) return null;
+  const c = s.lastIndexOf(','), d = s.lastIndexOf('.');
+  let int = s, dec = '';
+  if (c >= 0 && d >= 0) {
+    const sep = c > d ? ',' : '.', other = sep === ',' ? '.' : ',';
+    s = s.split(other).join('');
+    if (s.split(sep).length !== 2) return null;
+    [int, dec] = s.split(sep);
+  } else if (c >= 0) {
+    if (s.split(',').length > 2) { if (/^\d{1,3}(,\d{3})+$/.test(s)) int = s.replace(/,/g, ''); else return null; }
+    else [int, dec] = s.split(',');
+  } else if (d >= 0) {
+    if (/^\d{1,3}(\.\d{3})+$/.test(s)) int = s.replace(/\./g, '');
+    else if (s.split('.').length === 2) [int, dec] = s.split('.');
+    else return null;
+  }
+  if (!/^\d+$/.test(int) || (dec !== '' && !/^\d{1,2}$/.test(dec))) return null;
+  const cents = parseInt(int, 10) * 100 + parseInt((dec + '00').slice(0, 2), 10);
+  return cents > MAX_CENTS ? null : cents;
+}
+const cleanPhone = v => String(v ?? '').trim().replace(/^="?/, '').replace(/"$/, '').replace(/[\s\-().]/g, '');
+const validPhone = p => /^\+?\d{6,15}$/.test(p);
+const phoneKey = p => { const d = String(p || '').replace(/\D/g, ''); return d.length >= 9 ? d.slice(-9) : d; };
+const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
+function groupDigits(d) { return d.length === 9 ? `${d.slice(0,3)} ${d.slice(3,6)} ${d.slice(6)}` : d.replace(/(\d{3})(?=\d)/g, '$1 '); }
+function showPhone(p) {
+  if (!p) return '—';
+  const m = /^(\+|00)(34)(\d{9})$/.exec(p);
+  if (m) return `${m[1]}${m[2]} ${groupDigits(m[3])}`;
+  if (p.startsWith('+')) return '+' + groupDigits(p.slice(1));
+  return groupDigits(p);
+}
+const maskPhone = p => p ? '••• ••• ' + String(p).replace(/\D/g, '').slice(-3) : '—';
+const maskEmail = e => { if (!e) return '—'; const [u, d] = String(e).split('@'); return (u || '').slice(0, 2) + '•••@' + (d || ''); };
+const initials = n => { const w = String(n || '').trim().split(/[\s._-]+/).filter(Boolean); return ((w[0] || '?')[0] + (w[1] ? w[1][0] : (w[0] || '').slice(1, 2))).toUpperCase(); };
+
+const ACC = { activa:{label:'Activa', t:'g'}, revision:{label:'En revisión', t:'b'}, baneada:{label:'Baneada', t:'r'} };
+const MOB = { activo:{label:'Activo', t:'g'}, inactivo:{label:'Inactivo', t:'n'}, averiado:{label:'Averiado', t:'r'} };
+const SIM = { activa:{label:'Activa', t:'g'}, bloqueada:{label:'Bloqueada', t:'r'}, baja:{label:'De baja', t:'n'} };
+const COLOR = { g:'var(--green)', r:'var(--red)', b:'var(--blue)', n:'var(--fg-2)', o:'var(--orange)' };
+const OPERATORS = ['Simyo','Lowi','Digi','Pepephone','O2','Movistar','Vodafone','Orange','Yoigo','MásMóvil','Jazztel','Otro'];
+const SECRET = { vintedPassword:'Contraseña de Vinted', emailPassword:'Contraseña del correo', simPin:'PIN de la SIM', simPuk:'PUK de la SIM', phoneLock:'Código de bloqueo del móvil' };
+const COMPLETE = [['vintedUser','usuario de Vinted'],['vintedPassword','contraseña de Vinted'],['email','correo'],['emailPassword','contraseña del correo'],['phone','teléfono'],['simPin','PIN de la SIM']];
+const isSimyo = op => norm(op) === 'simyo';
+const totalOf = a => (a.withdrawn || 0) + (a.pending || 0);
+const hasField = (a, k) => SECRET[k] ? !!(a.has && a.has[k]) : !!a[k];
+const missing = a => COMPLETE.filter(([k]) => !hasField(a, k));
+const simStatus = a => SIM[a.simStatus] ? a.simStatus : 'activa';
+
+const ICON = {
+  eye:'<svg class="i" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>',
+  eyeOff:'<svg class="i" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>',
+  edit:'<svg class="i" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></svg>',
+  trash:'<svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
+  x:'<svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  plus:'<svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  filter:'<svg class="i" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></svg>',
+  users:'<svg class="i" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></svg>',
+  user:'<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+  phone:'<svg class="i" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18h2"/></svg>',
+  ban:'<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg>',
+  out:'<svg class="i" viewBox="0 0 24 24"><path d="M12 19V5m0 0-6 6m6-6 6 6"/></svg>',
+  clock:'<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  wallet:'<svg class="i" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h13v4"/><path d="M3 7v11a2 2 0 0 0 2 2h15V9H5a2 2 0 0 1-2-2Z"/><circle cx="16" cy="14.5" r="1.2"/></svg>',
+  sim:'<svg class="i" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><rect x="9" y="11" width="6" height="6" rx="1"/></svg>',
+  mail:'<svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 6.5 8.5 6 8.5-6"/></svg>',
+  lock:'<svg class="i" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>',
+  unlock:'<svg class="i" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 7.7-1.5"/></svg>',
+  euro:'<svg class="i" viewBox="0 0 24 24"><path d="M17 6.5A7 7 0 1 0 17 17.5M4 10h9M4 14h9"/></svg>',
+  note:'<svg class="i" viewBox="0 0 24 24"><path d="M5 3h10l4 4v14H5z"/><path d="M9 11h6M9 15h6"/></svg>',
+  up:'<svg class="i" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>',
+  down:'<svg class="i" viewBox="0 0 24 24"><path d="M12 5v14m-6-6 6 6 6-6"/></svg>',
+  copy:'<svg class="i" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
+  shield:'<svg class="i" viewBox="0 0 24 24"><path d="M12 3 4.5 6v6c0 4.5 3.2 7.8 7.5 9 4.3-1.2 7.5-4.5 7.5-9V6L12 3Z"/><path d="m9 12 2 2 4-4"/></svg>',
+  history:'<svg class="i" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>',
+  chart:'<svg class="i" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
+};
+
+/* ---------- Almacenamiento: base de datos privada del artefacto, o el navegador como respaldo ---------- */
+const LS_KEY = 'vinted-control.v1';
+const Store = {
+  mode: 'loading', db: null, accounts: new Map(), settings: { defaultSimCost: 500 }, local: null, lastSync: null,
+  histQueue: new Map(),
+  async init() {
+    let db = null;
+    try { if (window.claude && typeof window.claude.use === 'function') db = await window.claude.use('db'); } catch { db = null; }
+    if (db && await this.tryDb(db)) return;
+    this.useLocal();
+  },
+  tryDb(db) {
+    return new Promise(resolve => {
+      let first = true;
+      const done = ok => { if (first) { first = false; resolve(ok); } };
+      try {
+        db.collection('accounts').onSnapshot(snap => {
+          this.mode = 'db'; this.db = db;
+          this.accounts = new Map(snap.docs.map(d => [d.id, { ...d.data(), id: d.id }]));
+          this.lastSync = new Date();
+          if (first) { this.watchSettings(); done(true); }
+          changed();
+        }, err => {
+          if (first) { done(false); return; }
+          toast(err && err.code === 'revoked' ? 'Se ha perdido el acceso a los datos.' : 'Se ha perdido la sincronización. Recarga la página.', true);
+        });
+      } catch { done(false); }
+    });
+  },
+  watchSettings() {
+    try {
+      this.db.doc('settings/main').onSnapshot(s => {
+        if (s.exists) this.settings = { ...this.settings, ...s.data() };
+        changed();
+      }, () => {});
+    } catch {}
+  },
+  useLocal() {
+    this.mode = 'local';
+    let data = null;
+    try { data = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch { data = null; }
+    this.local = data && typeof data === 'object' ? data : { accounts: {}, history: {}, settings: {} };
+    this.local.accounts ||= {}; this.local.history ||= {}; this.local.settings ||= {};
+    this.accounts = new Map(Object.entries(this.local.accounts).map(([id, a]) => [id, { ...a, id }]));
+    this.settings = { ...this.settings, ...this.local.settings };
+    changed();
+  },
+  persistLocal() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(this.local)); return true; }
+    catch { toast('Este navegador no permite guardar datos. Exporta un CSV para no perderlos.', true); return false; }
+  },
+  async putAccount(a) {
+    const { id, ...data } = a;
+    if (this.mode === 'db') {
+      const prev = this.accounts.get(id);
+      this.accounts.set(id, a); changed();
+      try { await this.db.collection('accounts').doc(id).set(data); }
+      catch (e) { if (prev) this.accounts.set(id, prev); else this.accounts.delete(id); changed(); throw e; }
+    } else {
+      this.local.accounts[id] = data; this.accounts.set(id, a); this.persistLocal(); changed();
+    }
+  },
+  async removeAccount(id) {
+    if (this.mode === 'db') {
+      const prev = this.accounts.get(id);
+      this.accounts.delete(id); changed();
+      try { await this.db.collection('accounts').doc(id).delete(); await this.db.doc('history/' + id).delete(); }
+      catch (e) { if (prev) this.accounts.set(id, prev); changed(); throw e; }
+    } else {
+      delete this.local.accounts[id]; delete this.local.history[id]; this.accounts.delete(id); this.persistLocal(); changed();
+    }
+  },
+  async getHistory(id) {
+    if (this.mode === 'db') {
+      try { const s = await this.db.doc('history/' + id).get(); return s.exists ? (s.data().events || []) : []; } catch { return null; }
+    }
+    return this.local.history[id] || [];
+  },
+  addHistory(id, ev) {
+    // Un único escritor por documento de historial: las escrituras se encadenan.
+    const run = async () => {
+      if (this.mode === 'db') {
+        const ref = this.db.doc('history/' + id);
+        const s = await ref.get();
+        const events = s.exists ? [...(s.data().events || [])] : [];
+        events.unshift(ev);
+        await ref.set({ events: events.slice(0, 300) });
+      } else {
+        const list = this.local.history[id] || [];
+        list.unshift(ev); this.local.history[id] = list.slice(0, 300); this.persistLocal();
+      }
+    };
+    const p = (this.histQueue.get(id) || Promise.resolve()).then(run).catch(() => {});
+    this.histQueue.set(id, p);
+    return p.then(() => { if (UI.detailId === id) loadHistory(id); });
+  },
+  async saveSettings(s) {
+    const prev = this.settings;
+    this.settings = { ...this.settings, ...s }; changed();
+    try {
+      if (this.mode === 'db') await this.db.doc('settings/main').set(this.settings);
+      else { this.local.settings = this.settings; this.persistLocal(); }
+    } catch (e) { this.settings = prev; changed(); throw e; }
+  },
+};
+
+/* ---------- Bóveda: contraseñas, PIN y códigos se cifran en el navegador (AES-GCM, clave derivada con PBKDF2) ---------- */
+const enc = new TextEncoder(), dec = new TextDecoder();
+const b64 = buf => { const b = new Uint8Array(buf); let s = ''; for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]); return btoa(s); };
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const AUTOLOCK_MS = 30 * 60 * 1000;
+const Vault = {
+  key: null, timer: null, cache: new Map(),
+  supported: !!(window.crypto && crypto.subtle),
+  meta() { const v = Store.settings.vault; return v && v.salt && v.check ? v : null; },
+  get exists() { return !!this.meta(); },
+  get unlocked() { return !!this.key; },
+  async derive(pass, salt, iter) {
+    const base = await crypto.subtle.importKey('raw', enc.encode(pass), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name:'PBKDF2', salt, iterations: iter, hash:'SHA-256' }, base, { name:'AES-GCM', length:256 }, false, ['encrypt','decrypt']);
+  },
+  async encryptWith(key, obj) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, key, enc.encode(JSON.stringify(obj)));
+    return { iv: b64(iv), ct: b64(ct) };
+  },
+  async decryptWith(key, box) {
+    const pt = await crypto.subtle.decrypt({ name:'AES-GCM', iv: unb64(box.iv) }, key, unb64(box.ct));
+    return JSON.parse(dec.decode(pt));
+  },
+  async create(pass) {
+    const salt = crypto.getRandomValues(new Uint8Array(16)), iter = 310000;
+    const key = await this.derive(pass, salt, iter);
+    const check = await this.encryptWith(key, { v: 'vinted-ok' });
+    await Store.saveSettings({ vault: { salt: b64(salt), iter, check, createdAt: new Date().toISOString() } });
+    this.setKey(key);
+  },
+  async unlock(pass) {
+    const m = this.meta(); if (!m) return false;
+    const key = await this.derive(pass, unb64(m.salt), m.iter || 310000);
+    try { const r = await this.decryptWith(key, m.check); if (!r || r.v !== 'vinted-ok') return false; } catch { return false; }
+    this.setKey(key); return true;
+  },
+  setKey(k) { this.key = k; this.touch(); vaultChanged(); },
+  lock() { this.key = null; this.cache.clear(); clearTimeout(this.timer); vaultChanged(); },
+  touch() { if (!this.key) return; clearTimeout(this.timer); this.timer = setTimeout(() => { this.lock(); toast('Contraseñas bloqueadas por inactividad'); }, AUTOLOCK_MS); },
+  async read(acc) {
+    if (!acc || !acc.secret) return {};
+    if (!this.key) return null;
+    const k = acc.secret.ct;
+    if (this.cache.has(k)) return this.cache.get(k);
+    try { const v = await this.decryptWith(this.key, acc.secret); this.cache.set(k, v); return v; } catch { return null; }
+  },
+  async seal(obj) { if (!this.key) throw new Error('locked'); return Object.keys(obj).length ? this.encryptWith(this.key, obj) : null; },
+};
+function vaultChanged() { changed(); document.dispatchEvent(new Event('vaultchange')); }
+['pointerdown', 'keydown'].forEach(t => document.addEventListener(t, () => Vault.touch(), { passive: true }));
+
+/** Caja reutilizable para crear o desbloquear la bóveda. */
+function vaultBox(context) {
+  if (!Vault.supported) return `<div class="alert r">${ICON.lock}<p>Este navegador no permite cifrar datos, así que no se pueden guardar contraseñas ni códigos aquí.</p></div>`;
+  if (Vault.unlocked) return '';
+  if (!Vault.exists) return `<div class="vault" data-vault-box>
+    <div class="vault-h"><span class="ico g">${ICON.shield}</span><div><b>Crea tu clave maestra</b><p>${context || 'Las contraseñas, PIN y códigos se cifran con ella antes de guardarse.'} Nadie puede leerlos sin esta clave. Si la olvidas, no se pueden recuperar.</p></div></div>
+    <div class="row"><input class="field" type="password" data-vpass placeholder="Clave maestra (mín. 8 caracteres)" autocomplete="new-password" aria-label="Clave maestra"><input class="field" type="password" data-vpass2 placeholder="Repite la clave" autocomplete="new-password" aria-label="Repite la clave maestra"><button class="btn primary" type="button" data-vact="create">${ICON.shield}Crear y desbloquear</button></div>
+    <span class="err" data-verr></span></div>`;
+  return `<div class="vault" data-vault-box>
+    <div class="vault-h"><span class="ico g">${ICON.lock}</span><div><b>Contraseñas bloqueadas</b><p>${context || 'Escribe tu clave maestra para ver, copiar o editar contraseñas, PIN y códigos.'}</p></div></div>
+    <div class="row"><input class="field" type="password" data-vpass placeholder="Clave maestra" autocomplete="current-password" aria-label="Clave maestra"><button class="btn primary" type="button" data-vact="unlock">${ICON.unlock}Desbloquear</button></div>
+    <span class="err" data-verr></span></div>`;
+}
+async function handleVaultAction(btn) {
+  const box = btn.closest('[data-vault-box]'); if (!box) return;
+  const err = $('[data-verr]', box), p1 = $('[data-vpass]', box), p2 = $('[data-vpass2]', box);
+  err.textContent = '';
+  const pass = p1.value;
+  const label = btn.innerHTML;
+  btn.disabled = true;
+  try {
+    if (btn.dataset.vact === 'create') {
+      if (pass.length < 8) { err.textContent = 'La clave debe tener al menos 8 caracteres.'; p1.focus(); return; }
+      if (pass !== p2.value) { err.textContent = 'Las dos claves no coinciden.'; p2.focus(); return; }
+      btn.textContent = 'Creando…';
+      await Vault.create(pass);
+      toast('Clave maestra creada. Contraseñas desbloqueadas');
+    } else {
+      if (!pass) { err.textContent = 'Escribe tu clave maestra.'; p1.focus(); return; }
+      btn.textContent = 'Comprobando…';
+      const ok = await Vault.unlock(pass);
+      if (!ok) { err.textContent = 'La clave no es correcta.'; p1.select(); return; }
+      toast('Contraseñas desbloqueadas');
+    }
+  } catch (e) { err.textContent = e && e.code ? errMsg(e) : 'No se pudo completar. Inténtalo de nuevo.'; }
+  finally { if (document.contains(btn)) { btn.disabled = false; btn.innerHTML = label; } }
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-vact]'); if (b) { e.preventDefault(); handleVaultAction(b); } });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const inp = e.target.closest && e.target.closest('[data-vpass],[data-vpass2]'); if (!inp) return;
+  e.preventDefault();
+  const b = $('[data-vact]', inp.closest('[data-vault-box]')); if (b) b.click();
+});
+
+/* ---------- Estado de la interfaz ---------- */
+const UI = { chip: 'all', q: '', op: '', sim: '', from: '', to: '', sortBy: 'registeredAt', sortDir: 'desc', view: 'cards', showPrivate: false, moreOpen: false, detailId: null, detailTab: 'resumen', history: null };
+try { const saved = JSON.parse(localStorage.getItem('vinted-control.ui') || 'null'); if (saved) Object.assign(UI, { sortBy: saved.sortBy || 'registeredAt', sortDir: saved.sortDir || 'desc', view: saved.view === 'table' ? 'table' : 'cards' }); } catch {}
+const saveUi = () => { try { localStorage.setItem('vinted-control.ui', JSON.stringify({ sortBy: UI.sortBy, sortDir: UI.sortDir, view: UI.view })); } catch {} };
+
+const CHIPS = [
+  { k:'all', label:'Todas', fn: () => true },
+  { k:'activas', label:'Activas', dot:COLOR.g, fn: a => a.accountStatus === 'activa' },
+  { k:'revision', label:'En revisión', dot:COLOR.b, fn: a => a.accountStatus === 'revision' },
+  { k:'baneadas', label:'Baneadas', dot:COLOR.r, fn: a => a.accountStatus === 'baneada' },
+  { k:'mov-activo', label:'Móvil activo', dot:COLOR.g, fn: a => a.phoneStatus === 'activo' },
+  { k:'mov-inactivo', label:'Móvil inactivo', dot:COLOR.n, fn: a => a.phoneStatus === 'inactivo' },
+  { k:'mov-averiado', label:'Móvil averiado', dot:COLOR.r, fn: a => a.phoneStatus === 'averiado' },
+  { k:'sim-bloq', label:'SIM bloqueada', dot:COLOR.r, fn: a => simStatus(a) === 'bloqueada' },
+  { k:'pendiente', label:'Con saldo pendiente', dot:COLOR.o, fn: a => (a.pending || 0) > 0 },
+  { k:'incompletas', label:'Datos incompletos', dot:COLOR.n, fn: a => missing(a).length > 0 },
+];
+
+function filtered() {
+  const all = [...Store.accounts.values()];
+  const chip = CHIPS.find(c => c.k === UI.chip) || CHIPS[0];
+  const q = norm(UI.q).replace(/^@/, ''), qDigits = UI.q.replace(/\D/g, '');
+  let list = all.filter(a => {
+    if (!chip.fn(a)) return false;
+    if (UI.op && norm(a.operator) !== UI.op) return false;
+    if (UI.sim && simStatus(a) !== UI.sim) return false;
+    if (UI.from && (a.registeredAt || '') < UI.from) return false;
+    if (UI.to && (a.registeredAt || '') > UI.to) return false;
+    if (q) {
+      const inText = [a.name, a.vintedUser, a.email, a.deviceModel].some(v => norm(v).includes(q));
+      const inPhone = qDigits.length >= 2 && String(a.phone || '').replace(/\D/g, '').includes(qDigits);
+      if (!inText && !inPhone) return false;
+    }
+    return true;
+  });
+  const dir = UI.sortDir === 'asc' ? 1 : -1;
+  const key = {
+    registeredAt: a => a.registeredAt || '', total: totalOf, pending: a => a.pending || 0,
+    withdrawn: a => a.withdrawn || 0, name: a => norm(a.name),
+  }[UI.sortBy] || (a => a.registeredAt || '');
+  list.sort((x, y) => { const a = key(x), b = key(y); return (a < b ? -1 : a > b ? 1 : 0) * dir || norm(x.name).localeCompare(norm(y.name), 'es'); });
+  return list;
+}
+
+function totals(list) {
+  const t = { n: list.length, acc: { activa:0, revision:0, baneada:0 }, mob: { activo:0, inactivo:0, averiado:0 }, sim: { activa:0, bloqueada:0, baja:0 }, withdrawn: 0, pending: 0, simCost: 0, simyo: 0, withPending: 0, incomplete: 0 };
+  for (const a of list) {
+    if (t.acc[a.accountStatus] !== undefined) t.acc[a.accountStatus]++;
+    if (t.mob[a.phoneStatus] !== undefined) t.mob[a.phoneStatus]++;
+    t.sim[simStatus(a)]++;
+    t.withdrawn += a.withdrawn || 0; t.pending += a.pending || 0; t.simCost += a.simCost || 0;
+    if (isSimyo(a.operator)) t.simyo++;
+    if ((a.pending || 0) > 0) t.withPending++;
+    if (missing(a).length) t.incomplete++;
+  }
+  t.total = t.withdrawn + t.pending;
+  return t;
+}
+
+/* ---------- Render ---------- */
+function renderBadges() {
+  const b = $('#storeBadge');
+  if (Store.mode === 'db') { b.className = 'badge ok'; b.lastElementChild.textContent = 'Guardado en la nube · privado'; b.title = 'Solo tú puedes leer y modificar estos datos.'; }
+  else if (Store.mode === 'local') { b.className = 'badge warn'; b.lastElementChild.textContent = 'Guardado solo en este navegador'; b.title = 'Abre la app desde Claude para guardar en la nube.'; }
+  const v = $('#vaultBadge');
+  v.hidden = Store.mode === 'loading' || !Vault.supported;
+  v.className = 'badge' + (Vault.unlocked ? ' unlocked' : '');
+  v.innerHTML = Vault.unlocked ? `${small(ICON.unlock)}Contraseñas desbloqueadas · Bloquear`
+    : Vault.exists ? `${small(ICON.lock)}Contraseñas bloqueadas · Desbloquear` : `${small(ICON.shield)}Crear clave maestra`;
+  $('#updatedAt').textContent = Store.lastSync && Store.mode === 'db' ? `Sincronizado ${Store.lastSync.toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'})}` : '';
+}
+
+function renderKpis() {
+  const t = totals([...Store.accounts.values()]);
+  const pct = t.total ? Math.round(t.withdrawn / t.total * 1000) / 10 : 0;
+  const def = Store.settings.defaultSimCost ?? 500;
+  $('#kpis').innerHTML = `
+    <article class="kpi hero">
+      <div class="head"><span>Dinero total</span><span class="ico">${ICON.wallet}</span></div>
+      <div class="val">${money(t.total)}</div>
+      <div class="split" role="img" aria-label="Retirado ${pct}% del total">
+        <span class="w" style="width:${t.total ? (t.withdrawn / t.total * 100) : 0}%"></span><span class="p" style="width:${t.total ? (t.pending / t.total * 100) : 0}%"></span>
+      </div>
+      <div class="legend"><span><i style="background:var(--green)"></i>Retirado ${money(t.withdrawn)}</span><span><i style="background:var(--orange)"></i>Pendiente ${money(t.pending)}</span><span class="c-b">Neto estimado tras SIM: ${money(t.total - t.simCost)}</span></div>
+    </article>
+    <article class="kpi">
+      <div class="head"><span>Saldo retirado</span><span class="ico g">${ICON.out}</span></div>
+      <div class="val c-g">${money(t.withdrawn)}</div>
+      <div class="sub">${t.total ? `${pct.toLocaleString('es-ES')} % del dinero total` : 'Sin retiradas registradas'}</div>
+    </article>
+    <article class="kpi">
+      <div class="head"><span>Saldo pendiente</span><span class="ico o">${ICON.clock}</span></div>
+      <div class="val c-o">${money(t.pending)}</div>
+      <div class="sub">${t.withPending ? `En ${t.withPending} ${t.withPending === 1 ? 'cuenta' : 'cuentas'}` : 'Nada pendiente de retirar'}</div>
+    </article>
+    <article class="kpi">
+      <div class="head"><span>Total de cuentas</span><span class="ico b">${ICON.users}</span></div>
+      <div class="val">${t.n}</div>
+      <div class="sub"><span class="c-g">${t.acc.activa} activas</span>·<span class="c-b">${t.acc.revision} en revisión</span></div>
+    </article>
+    <article class="kpi">
+      <div class="head"><span>Móviles activos</span><span class="ico g">${ICON.phone}</span></div>
+      <div class="val">${t.mob.activo}</div>
+      <div class="sub">de ${t.n} ${t.n === 1 ? 'móvil registrado' : 'móviles registrados'}${t.mob.averiado ? ` · <span class="c-r">${t.mob.averiado} averiado${t.mob.averiado > 1 ? 's' : ''}</span>` : ''}</div>
+    </article>
+    <article class="kpi">
+      <div class="head"><span>Cuentas baneadas</span><span class="ico r">${ICON.ban}</span></div>
+      <div class="val ${t.acc.baneada ? 'c-r' : ''}">${t.acc.baneada}</div>
+      <div class="sub">${t.n ? `${Math.round(t.acc.baneada / t.n * 100)} % del total` : 'Sin cuentas todavía'}</div>
+    </article>
+    <article class="kpi">
+      <div class="head"><span>Coste de SIM</span><span class="ico">${ICON.sim}</span></div>
+      <div class="val">${money(t.simCost)}</div>
+      <div class="sub">${t.simyo} SIM Simyo · ${money(def)} por SIM <button class="link-btn" type="button" data-act="sim-settings">Cambiar</button></div>
+    </article>`;
+}
+
+function stackBar(label, map, counts, n) {
+  const parts = Object.entries(map).map(([k, v]) => ({ k, v, c: counts[k] || 0 }));
+  return `<div class="stack-row"><div class="lab"><span>${label}</span><span>${parts.filter(p => p.c).map(p => `<span style="color:${COLOR[p.v.t]}">${p.c} ${esc(p.v.label.toLowerCase())}</span>`).join(' · ') || '—'}</span></div>
+    <div class="stack" role="img" aria-label="${label}: ${parts.map(p => `${p.c} ${p.v.label}`).join(', ')}">${parts.filter(p => p.c).map(p => `<span style="width:${p.c / n * 100}%;background:${COLOR[p.v.t]}"></span>`).join('')}</div></div>`;
+}
+function renderOverview() {
+  const el = $('#overview');
+  const all = [...Store.accounts.values()];
+  el.hidden = !all.length;
+  if (!all.length) { el.innerHTML = ''; return; }
+  const t = totals(all);
+  const top = [...all].sort((a, b) => totalOf(b) - totalOf(a)).slice(0, 8);
+  const max = Math.max(1, ...top.map(totalOf));
+  const rest = all.length - top.length;
+  el.innerHTML = `
+    <div class="panel chart">
+      <div class="chart-h"><h2>Dinero por cuenta</h2><span>${rest > 0 ? `Las 8 con más dinero de ${all.length}` : 'Retirado y pendiente'}</span></div>
+      ${t.total ? `<ul class="bars">${top.map(a => `<li><button type="button" data-open="${esc(a.id)}" title="${esc(a.name)}">${esc(a.name)}</button>
+        <div class="track" role="img" aria-label="${esc(a.name)}: retirado ${money(a.withdrawn)}, pendiente ${money(a.pending)}"><span class="w" style="width:${(a.withdrawn || 0) / max * 100}%"></span><span class="p" style="width:${(a.pending || 0) / max * 100}%"></span></div>
+        <span class="amt">${money(totalOf(a))}</span></li>`).join('')}</ul>
+        <div class="legend"><span><i style="background:var(--green)"></i>Retirado</span><span><i style="background:var(--orange)"></i>Pendiente</span></div>`
+      : '<p class="muted" style="margin:0">Todavía no hay importes registrados. Añádelos al editar cada cuenta.</p>'}
+    </div>
+    <div class="panel chart">
+      <div class="chart-h"><h2>Estado general</h2><span>${t.n} ${t.n === 1 ? 'cuenta' : 'cuentas'}</span></div>
+      ${stackBar('Cuentas', ACC, t.acc, t.n)}
+      ${stackBar('Móviles', MOB, t.mob, t.n)}
+      ${stackBar('SIM', SIM, t.sim, t.n)}
+      ${t.incomplete ? `<div class="callout">${ICON.note}<span><b>${t.incomplete}</b> ${t.incomplete === 1 ? 'ficha tiene' : 'fichas tienen'} datos sin rellenar</span><button class="btn sm" type="button" data-act="show-incomplete">Ver</button></div>`
+        : `<div class="callout">${ICON.shield}<span>Todas las fichas tienen sus datos completos.</span></div>`}
+    </div>`;
+}
+
+function renderFilters() {
+  const all = [...Store.accounts.values()];
+  $('#chips').innerHTML = CHIPS.map(c => `<button class="chip" type="button" data-chip="${c.k}" aria-pressed="${UI.chip === c.k}">${c.dot ? `<span class="d" style="background:${c.dot}"></span>` : ''}${c.label}<span class="n">${all.filter(c.fn).length}</span></button>`).join('');
+  const ops = [...new Map(all.filter(a => a.operator).map(a => [norm(a.operator), a.operator])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'es'));
+  if (UI.op && !ops.some(([k]) => k === UI.op)) UI.op = '';
+  $('#fOp').innerHTML = '<option value="">Todos</option>' + ops.map(([k, v]) => `<option value="${esc(k)}"${k === UI.op ? ' selected' : ''}>${esc(v)}</option>`).join('');
+  $('#fSim').value = UI.sim;
+  $('#sortBy').value = UI.sortBy;
+  $('#sortDir').innerHTML = UI.sortDir === 'asc' ? ICON.up : ICON.down;
+  $('#sortDir').setAttribute('aria-label', UI.sortDir === 'asc' ? 'Orden ascendente (pulsa para descendente)' : 'Orden descendente (pulsa para ascendente)');
+  const extra = UI.op || UI.sim || UI.from || UI.to;
+  $('#moreFilters').hidden = !UI.moreOpen;
+  $('#btnMore').setAttribute('aria-expanded', UI.moreOpen);
+  $('#btnMore').innerHTML = `${ICON.filter}Más filtros${extra ? ' <span class="filter-dot" aria-label="activos"></span>' : ''}`;
+  $('#clearFilters').hidden = !(UI.chip !== 'all' || UI.q || extra);
+  $$('[data-view]').forEach(b => b.setAttribute('aria-pressed', b.dataset.view === UI.view));
+  $('#togglePrivate').setAttribute('aria-pressed', UI.showPrivate);
+  $('#togglePrivate span').textContent = UI.showPrivate ? 'Ocultar teléfonos y correos' : 'Mostrar teléfonos y correos';
+}
+
+function pillSelect(a, field) {
+  const map = field === 'accountStatus' ? ACC : MOB;
+  const cur = map[a[field]] ? a[field] : Object.keys(map)[0];
+  const lab = field === 'accountStatus' ? 'Estado de la cuenta' : 'Estado del móvil';
+  return `<select class="pill t-${map[cur].t}" data-quick="${field}" data-id="${esc(a.id)}" aria-label="${lab} de ${esc(a.name)}" title="${lab}">${Object.entries(map).map(([k, v]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${field === 'phoneStatus' ? 'Móvil ' + v.label.toLowerCase() : v.label}</option>`).join('')}</select>`;
+}
+const amt = (c, cls = '') => `<span class="amt ${cls} ${(c || 0) === 0 ? 'zero' : ''}">${money(c)}</span>`;
+const avatar = a => `<span class="avatar t-${ACC[a.accountStatus]?.t || 'n'}" aria-hidden="true">${esc(initials(a.name))}</span>`;
+const phoneTxt = a => UI.showPrivate ? showPhone(a.phone) : maskPhone(a.phone);
+const emailTxt = a => UI.showPrivate ? (a.email || '—') : maskEmail(a.email);
+
+function cardHtml(a) {
+  const t = ACC[a.accountStatus]?.t || 'n';
+  const tot = totalOf(a), miss = missing(a), done = COMPLETE.length - miss.length, pct = Math.round(done / COMPLETE.length * 100);
+  const s = SIM[simStatus(a)];
+  return `<article class="acard" data-row="${esc(a.id)}" style="--st:${COLOR[t]}" tabindex="0" aria-label="Cuenta ${esc(a.name)}">
+    <div class="ac-top">${avatar(a)}
+      <div class="ac-id"><h3 title="${esc(a.name)}">${esc(a.name)}</h3>${a.vintedUser ? `<span class="handle">@${esc(a.vintedUser)}</span>` : '<span class="muted" style="font-size:12.5px">Sin usuario de Vinted</span>'}</div>
+      ${pillSelect(a, 'accountStatus')}</div>
+    <div class="ac-money">
+      <div><span class="l">Retirado</span><b class="${a.withdrawn ? 'c-g' : 'muted'}">${money(a.withdrawn)}</b></div>
+      <div><span class="l">Pendiente</span><b class="${a.pending ? 'c-o' : 'muted'}">${money(a.pending)}</b></div>
+      <div class="tot"><span class="l">Total</span><b>${money(tot)}</b></div>
+    </div>
+    <div class="split" aria-hidden="true"><span class="w" style="width:${tot ? (a.withdrawn || 0) / tot * 100 : 0}%"></span><span class="p" style="width:${tot ? (a.pending || 0) / tot * 100 : 0}%"></span></div>
+    <ul class="ac-info">
+      <li>${ICON.sim}<span class="txt mono">${esc(phoneTxt(a))}</span>${a.operator ? `<span class="op">${esc(a.operator)}</span>` : ''}<span class="dotl t-${s.t}">SIM ${esc(s.label.toLowerCase())}</span></li>
+      <li>${ICON.mail}<span class="txt">${a.email ? esc(emailTxt(a)) : '<span class="muted">Sin correo</span>'}</span></li>
+      <li>${ICON.phone}<span class="txt">${a.deviceModel ? esc(a.deviceModel) : '<span class="muted">Móvil sin modelo</span>'}</span>${pillSelect(a, 'phoneStatus')}</li>
+    </ul>
+    <div class="ac-foot">
+      <button class="qbtn" type="button" data-copy="vintedUser" data-id="${esc(a.id)}" ${a.vintedUser ? '' : 'disabled'} title="Copiar usuario de Vinted">${small(ICON.copy)}Usuario</button>
+      <button class="qbtn" type="button" data-copy="vintedPassword" data-id="${esc(a.id)}" ${hasField(a, 'vintedPassword') ? '' : 'disabled'} title="${Vault.unlocked ? 'Copiar contraseña de Vinted' : 'Desbloquea para copiar la contraseña'}">${small(Vault.unlocked ? ICON.copy : ICON.lock)}Contraseña</button>
+      <button class="qbtn" type="button" data-copy="email" data-id="${esc(a.id)}" ${a.email ? '' : 'disabled'} title="Copiar correo">${small(ICON.copy)}Correo</button>
+      <span class="ring" style="--p:${pct};--rc:${pct === 100 ? 'var(--green)' : 'var(--orange)'}" title="${miss.length ? 'Falta: ' + miss.map(m => m[1]).join(', ') : 'Datos completos'}"><span>${done}/${COMPLETE.length}</span></span>
+    </div>
+  </article>`;
+}
+
+function tableHtml(list) {
+  const th = (k, label, r) => `<th class="${r ? 'r' : ''} ${UI.sortBy === k ? 'sorted' : ''}" aria-sort="${UI.sortBy === k ? (UI.sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}"><button type="button" data-sort="${k}">${label}<span class="arr">${UI.sortBy === k ? (UI.sortDir === 'asc' ? '▲' : '▼') : '▼'}</span></button></th>`;
+  return `<div class="table-wrap"><table>
+    <thead><tr>${th('name','Cuenta')}<th>SIM / Teléfono</th><th>Estado cuenta</th><th>Estado móvil</th>${th('withdrawn','Retirado',1)}${th('pending','Pendiente',1)}${th('total','Dinero total',1)}<th class="r">Coste SIM</th>${th('registeredAt','Registro')}<th>Notas</th><th class="r"><span class="sr">Acciones</span></th></tr></thead>
+    <tbody>${list.map(a => { const s = SIM[simStatus(a)]; return `<tr data-row="${esc(a.id)}">
+      <td class="c-name" data-label="Cuenta"><span class="acc-name" title="${esc(a.name)}">${esc(a.name)}</span>${a.vintedUser ? `<span class="handle" style="font-size:12.5px">@${esc(a.vintedUser)}</span>` : ''}</td>
+      <td data-label="SIM / Teléfono"><div class="sim"><span>${a.operator ? `<span class="op">${esc(a.operator)}</span> ` : ''}<span class="dotl t-${s.t}">${esc(s.label)}</span></span><span class="mono" style="color:var(--fg-2)">${esc(phoneTxt(a))}</span></div></td>
+      <td data-label="Estado cuenta">${pillSelect(a, 'accountStatus')}</td>
+      <td data-label="Estado móvil">${pillSelect(a, 'phoneStatus')}</td>
+      <td class="r" data-label="Retirado">${amt(a.withdrawn, (a.withdrawn || 0) ? 'c-g' : '')}</td>
+      <td class="r" data-label="Pendiente">${amt(a.pending, (a.pending || 0) ? 'c-o' : '')}</td>
+      <td class="r" data-label="Dinero total">${amt(totalOf(a), 'total')}</td>
+      <td class="r" data-label="Coste SIM">${amt(a.simCost)}</td>
+      <td data-label="Registro"><span class="date num">${fmtDate(a.registeredAt)}</span></td>
+      <td class="c-notes ${a.notes ? '' : 'blank'}" data-label="Notas"><span class="notes" title="${esc(a.notes)}">${a.notes ? esc(a.notes) : '<span class="muted">—</span>'}</span></td>
+      <td class="c-acts"><div class="acts">
+        <button class="icon-btn sm" type="button" data-act="view" data-id="${esc(a.id)}" aria-label="Ver ficha de ${esc(a.name)}" title="Ver ficha">${ICON.eye}</button>
+        <button class="icon-btn sm" type="button" data-act="edit" data-id="${esc(a.id)}" aria-label="Editar ${esc(a.name)}" title="Editar">${ICON.edit}</button>
+        <button class="icon-btn sm del" type="button" data-act="delete" data-id="${esc(a.id)}" aria-label="Eliminar ${esc(a.name)}" title="Eliminar">${ICON.trash}</button>
+      </div></td></tr>`; }).join('')}</tbody></table></div>`;
+}
+
+function renderList() {
+  const area = $('#listArea');
+  if (Store.mode === 'loading') return;
+  const total = Store.accounts.size;
+  if (!total) {
+    area.innerHTML = `<div class="empty"><div class="badge-i">${ICON.users}</div><h3>Aún no hay cuentas registradas</h3>
+      <p>Cada cuenta guarda su acceso a Vinted, su correo, la SIM y el móvil, y el dinero retirado y pendiente.</p>
+      <div class="row"><button class="btn primary" type="button" data-act="add">${ICON.plus}Añadir la primera cuenta</button><button class="btn" type="button" data-act="import">Importar CSV</button></div>
+      <div class="steps">
+        <div><span class="ico b">${ICON.user}</span><span><b>1. Accesos</b>Usuario y contraseña de Vinted, correo y su contraseña.</span></div>
+        <div><span class="ico">${ICON.sim}</span><span><b>2. SIM y móvil</b>Número, operador, PIN, PUK y código de bloqueo.</span></div>
+        <div><span class="ico g">${ICON.euro}</span><span><b>3. Dinero</b>Saldo retirado y pendiente. Los totales se calculan solos.</span></div>
+      </div></div>`;
+    $('#resultCount').textContent = '0 cuentas';
+    return;
+  }
+  const list = filtered();
+  const t = totals(list);
+  $('#resultCount').textContent = list.length === total
+    ? `${total} ${total === 1 ? 'cuenta' : 'cuentas'} · ${money(t.total)}`
+    : `${list.length} de ${total} cuentas · ${money(t.total)} en la selección`;
+  if (!list.length) {
+    area.innerHTML = `<div class="empty"><h3>Ninguna cuenta coincide</h3><p>Prueba con otro término de búsqueda o quita alguno de los filtros.</p><div class="row"><button class="btn" type="button" data-act="clear">Quitar filtros</button></div></div>`;
+    return;
+  }
+  area.innerHTML = UI.view === 'table' ? tableHtml(list) : `<div class="cards">${list.map(cardHtml).join('')}</div>`;
+}
+
+let raf = 0;
+function changed() {
+  if (raf) return;
+  raf = requestAnimationFrame(() => { raf = 0; renderBadges(); renderKpis(); renderOverview(); renderFilters(); renderList(); if (UI.detailId) renderDetail(); });
+}
+
+/* ---------- Avisos ---------- */
+function toast(msg, err) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (err ? ' err' : ''); el.textContent = msg;
+  $('#toasts').appendChild(el);
+  setTimeout(() => el.remove(), err ? 5200 : 2600);
+}
+function errMsg(e) {
+  const code = e && e.code;
+  if (code === 'invalid_argument') return 'No tienes permiso para modificar estos datos.';
+  if (code === 'quota_exceeded') return 'Se ha llenado el almacenamiento. Elimina cuentas antiguas o exporta un CSV.';
+  if (code === 'resource_exhausted') return 'Demasiadas operaciones seguidas. Espera unos segundos y vuelve a intentarlo.';
+  return 'No se pudo guardar. Comprueba la conexión y vuelve a intentarlo.';
+}
+async function copyText(text, label) {
+  try { await navigator.clipboard.writeText(text); toast(`${label} copiado`); return true; }
+  catch { toast('No se pudo copiar automáticamente. Ábrelo en la ficha y selecciónalo.', true); return false; }
+}
+
+/* ---------- Capas (modales y panel) ---------- */
+let lastFocus = null;
+function openLayer(html, { drawer = false, onClose } = {}) {
+  closeLayer(true);
+  lastFocus = document.activeElement;
+  const layer = $('#layer');
+  layer.innerHTML = `<div class="scrim ${drawer ? 'drawer-scrim' : ''}" data-scrim>${html}</div>`;
+  layer._onClose = onClose;
+  const first = layer.querySelector('[autofocus]') || layer.querySelector('input:not([disabled]),select,textarea,button');
+  if (first) first.focus();
+  return layer.firstElementChild;
+}
+function closeLayer(silent) {
+  const layer = $('#layer');
+  if (!layer.firstElementChild) return;
+  const cb = layer._onClose; layer._onClose = null;
+  layer.innerHTML = '';
+  if (cb) cb();
+  if (!silent && lastFocus && document.contains(lastFocus)) lastFocus.focus();
+}
+$('#layer').addEventListener('mousedown', e => { if (e.target.matches('[data-scrim]')) closeLayer(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#layer').firstElementChild) { e.preventDefault(); closeLayer(); } });
+
+/* ---------- Formulario de cuenta ---------- */
+function pwField(id, label, extra = '') {
+  return `<div class="fg" data-f="${id}"><label for="f-${id}">${label} <span class="lock-tag">cifrado</span></label>
+    <div class="pw"><input class="field" type="password" id="f-${id}" data-secret="${id}" autocomplete="off" spellcheck="false" ${extra}><button type="button" data-pwtoggle aria-label="Mostrar u ocultar ${label}">${ICON.eye}</button></div><span class="err"></span></div>`;
+}
+function openForm(id, focusSection) {
+  const editing = id ? Store.accounts.get(id) : null;
+  const def = Store.settings.defaultSimCost ?? 500;
+  const a = editing || { name:'', vintedUser:'', email:'', phone:'', operator:'Simyo', simStatus:'activa', deviceModel:'', accountStatus:'activa', phoneStatus:'activo', withdrawn:0, pending:0, simCost:def, registeredAt:today(), lastWithdrawalAt:'', notes:'' };
+  const seg = (name, map, cur) => `<div class="seg" role="radiogroup">${Object.entries(map).map(([k, v]) => `<input type="radio" name="${name}" id="${name}-${k}" value="${k}"${k === cur ? ' checked' : ''}><label for="${name}-${k}" class="${v.t}">${v.label}</label>`).join('')}</div>`;
+  const sec = (sid, icon, cls, title, sub, body) => `<section class="fsec" id="sec-${sid}"><div class="fsec-h"><span class="ico ${cls}">${icon}</span><div><h3>${title}</h3><p>${sub}</p></div></div>${body}</section>`;
+  const root = openLayer(`
+  <form class="modal wide" id="accForm" novalidate aria-labelledby="formTitle">
+    <div class="modal-h"><h2 id="formTitle">${editing ? 'Editar ' + esc(editing.name) : 'Añadir cuenta'}</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <nav class="fnav" aria-label="Secciones"><a href="#sec-vinted">Vinted</a><a href="#sec-mail">Correo</a><a href="#sec-sim">SIM y teléfono</a><a href="#sec-mobile">Móvil</a><a href="#sec-money">Dinero</a><a href="#sec-notes">Fechas y notas</a></nav>
+    <div class="modal-b">
+      <div id="formAlert"></div>
+      <div id="formVault"></div>
+      ${sec('vinted', ICON.user, 'b', 'Cuenta de Vinted', 'Cómo identificas la cuenta y cómo entras en ella', `<div class="grid2">
+        <div class="fg" data-f="name"><label for="f-name">Nombre o identificador</label><input class="field" id="f-name" maxlength="80" value="${esc(a.name)}" autocomplete="off" placeholder="Ej.: Cuenta 7" autofocus><span class="err"></span></div>
+        <div class="fg" data-f="vintedUser"><label for="f-vintedUser">Usuario de Vinted</label><input class="field" id="f-vintedUser" maxlength="80" value="${esc(a.vintedUser)}" autocomplete="off" spellcheck="false"><span class="err"></span></div>
+        ${pwField('vintedPassword', 'Contraseña de Vinted')}
+        <div class="fg"><span class="lbl">Estado de la cuenta</span>${seg('f-acc', ACC, a.accountStatus)}</div></div>`)}
+      ${sec('mail', ICON.mail, 'b', 'Correo electrónico', 'El correo asociado a la cuenta de Vinted', `<div class="grid2">
+        <div class="fg" data-f="email"><label for="f-email">Correo electrónico</label><input class="field" id="f-email" type="email" maxlength="120" value="${esc(a.email)}" autocomplete="off" spellcheck="false" inputmode="email"><span class="err"></span></div>
+        ${pwField('emailPassword', 'Contraseña del correo')}</div>`)}
+      ${sec('sim', ICON.sim, '', 'SIM y teléfono', 'Número, operador, estado y códigos de la SIM', `<div class="grid2">
+        <div class="fg" data-f="phone"><label for="f-phone">Número de teléfono</label><input class="field mono" id="f-phone" inputmode="tel" maxlength="20" value="${esc(a.phone)}" autocomplete="off" placeholder="Ej.: 612 345 678"><span class="err"></span></div>
+        <div class="fg" data-f="operator"><label for="f-op">Operador</label><input class="field" id="f-op" list="opList" maxlength="40" value="${esc(a.operator)}" autocomplete="off"><datalist id="opList">${OPERATORS.map(o => `<option value="${o}">`).join('')}</datalist><span class="err"></span></div>
+        <div class="fg full"><span class="lbl">Estado de la SIM</span>${seg('f-sim-st', SIM, simStatus(a))}</div>
+        ${pwField('simPin', 'PIN de la SIM', 'inputmode="numeric" maxlength="12"')}
+        ${pwField('simPuk', 'PUK de la SIM', 'inputmode="numeric" maxlength="16"')}
+        <div class="fg" data-f="simCost"><label for="f-sim">Coste de la SIM</label><div class="money-in"><input class="field" id="f-sim" inputmode="decimal" value="${moneyPlain(a.simCost)}" autocomplete="off"><span>€</span></div><span class="hint">Por defecto ${money(def)} para Simyo</span><span class="err"></span></div></div>`)}
+      ${sec('mobile', ICON.phone, '', 'Móvil', 'El dispositivo donde está la SIM', `<div class="grid2">
+        <div class="fg" data-f="deviceModel"><label for="f-device">Modelo o nombre del móvil</label><input class="field" id="f-device" maxlength="60" value="${esc(a.deviceModel)}" autocomplete="off" placeholder="Ej.: Xiaomi Redmi 9 negro"><span class="err"></span></div>
+        ${pwField('phoneLock', 'Código o patrón de bloqueo', 'maxlength="40"')}
+        <div class="fg full"><span class="lbl">Estado del móvil</span>${seg('f-mob', MOB, a.phoneStatus)}</div></div>`)}
+      ${sec('money', ICON.euro, 'g', 'Dinero', 'Importes en euros. El total se calcula solo', `<div class="grid2">
+        <div class="fg" data-f="withdrawn"><label for="f-w">Saldo retirado</label><div class="money-in"><input class="field" id="f-w" inputmode="decimal" value="${moneyPlain(a.withdrawn)}" autocomplete="off"><span>€</span></div><span class="err"></span></div>
+        <div class="fg" data-f="pending"><label for="f-p">Saldo pendiente de retirar</label><div class="money-in"><input class="field" id="f-p" inputmode="decimal" value="${moneyPlain(a.pending)}" autocomplete="off"><span>€</span></div><span class="err"></span></div>
+        <div class="fg full"><div class="preview-total"><span>Dinero total (retirado + pendiente)</span><b id="f-total">${money(totalOf(a))}</b></div></div></div>`)}
+      ${sec('notes', ICON.note, '', 'Fechas y notas', 'Cuándo empezó la cuenta y cualquier observación', `<div class="grid2">
+        <div class="fg" data-f="registeredAt"><label for="f-date">Fecha de registro</label><input class="field" id="f-date" type="date" value="${esc(a.registeredAt || today())}"><span class="err"></span></div>
+        <div class="fg" data-f="lastWithdrawalAt"><label for="f-lastw">Última retirada</label><input class="field" id="f-lastw" type="date" value="${esc(a.lastWithdrawalAt || '')}"><span class="err"></span></div>
+        <div class="fg full"><label for="f-notes">Notas</label><textarea class="field" id="f-notes" maxlength="2000" placeholder="Observaciones, incidencias, próximos pasos…">${esc(a.notes)}</textarea></div></div>`)}
+    </div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-close>Cancelar</button><button class="btn primary" type="submit" id="f-submit">${editing ? 'Guardar cambios' : 'Añadir cuenta'}</button></div>
+  </form>`);
+  const form = $('#accForm', root);
+  let simTouched = !!editing, warned = '', secretsLoaded = false, oldSecrets = {};
+
+  async function syncSecrets() {
+    const inputs = $$('[data-secret]', form);
+    if (Vault.unlocked) {
+      const s = editing ? await Vault.read(editing) : {};
+      if (!document.contains(form)) return;
+      if (s === null) { $('#formVault').innerHTML = `<div class="alert r">${ICON.lock}<p>No se pudieron descifrar las contraseñas de esta cuenta.</p></div>`; inputs.forEach(i => { i.disabled = true; }); secretsLoaded = false; return; }
+      if (!secretsLoaded) { oldSecrets = s; inputs.forEach(i => { i.value = s[i.dataset.secret] || ''; }); }
+      inputs.forEach(i => { i.disabled = false; i.placeholder = ''; });
+      secretsLoaded = true;
+      $('#formVault').innerHTML = '';
+    } else {
+      inputs.forEach(i => { i.disabled = true; i.value = ''; i.placeholder = editing && hasField(editing, i.dataset.secret) ? '•••••••• guardada' : 'Desbloquea para escribir'; });
+      secretsLoaded = false;
+      $('#formVault').innerHTML = vaultBox(Vault.exists ? 'Desbloquea para ver o cambiar contraseñas, PIN y códigos. El resto de datos se puede editar igualmente.' : 'Para guardar contraseñas, PIN y códigos, crea antes una clave maestra. Puedes guardar la cuenta sin ellos y añadirlos después.');
+    }
+  }
+  const onVault = () => { if (document.contains(form)) syncSecrets(); else document.removeEventListener('vaultchange', onVault); };
+  document.addEventListener('vaultchange', onVault);
+  syncSecrets();
+  if (focusSection) { const s = $('#sec-' + focusSection, form); if (s) requestAnimationFrame(() => s.scrollIntoView({ block: 'start' })); }
+
+  const updTotal = () => { const w = parseMoney($('#f-w').value), p = parseMoney($('#f-p').value); $('#f-total').textContent = w === null || p === null ? '—' : money(w + p); };
+  $('#f-w').addEventListener('input', updTotal); $('#f-p').addEventListener('input', updTotal);
+  $('#f-sim').addEventListener('input', () => { simTouched = true; });
+  $('#f-op').addEventListener('input', () => { if (!simTouched) $('#f-sim').value = moneyPlain(isSimyo($('#f-op').value) ? def : 0); });
+  ['f-phone', 'f-vintedUser', 'f-email'].forEach(i => $('#' + i).addEventListener('input', () => { warned = ''; $('#formAlert').innerHTML = ''; }));
+  for (const i of ['f-w', 'f-p', 'f-sim']) $('#' + i).addEventListener('blur', e => { const c = parseMoney(e.target.value); if (c !== null) e.target.value = moneyPlain(c); });
+  form.addEventListener('click', e => {
+    if (e.target.closest('[data-close]')) return closeLayer();
+    const t = e.target.closest('[data-pwtoggle]');
+    if (t) { const inp = t.previousElementSibling; const show = inp.type === 'password'; inp.type = show ? 'text' : 'password'; t.innerHTML = show ? ICON.eyeOff : ICON.eye; return; }
+    const nav = e.target.closest('.fnav a');
+    if (nav) { e.preventDefault(); const s = $(nav.getAttribute('href'), form); if (s) s.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  });
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const setErr = (f, msg) => { const g = form.querySelector(`[data-f="${f}"]`); if (!g) return; g.classList.toggle('bad', !!msg); g.querySelector('.err').textContent = msg || ''; };
+    $$('.fg.bad', form).forEach(g => { g.classList.remove('bad'); const er = $('.err', g); if (er) er.textContent = ''; });
+    const name = $('#f-name').value.trim().replace(/\s+/g, ' ');
+    const vintedUser = $('#f-vintedUser').value.trim().replace(/^@/, '');
+    const email = $('#f-email').value.trim();
+    const phone = cleanPhone($('#f-phone').value);
+    const operator = $('#f-op').value.trim();
+    const withdrawn = parseMoney($('#f-w').value), pending = parseMoney($('#f-p').value), simCost = parseMoney($('#f-sim').value);
+    const registeredAt = $('#f-date').value, lastWithdrawalAt = $('#f-lastw').value;
+    const others = [...Store.accounts.values()].filter(x => x.id !== id);
+    let ok = true;
+    if (!name) { setErr('name', 'Escribe un nombre o identificador.'); ok = false; }
+    else if (others.some(x => norm(x.name) === norm(name))) { setErr('name', 'Ya existe una cuenta con este nombre.'); ok = false; }
+    if (email && !validEmail(email)) { setErr('email', 'Revisa el correo. Ej.: nombre@gmail.com'); ok = false; }
+    if (phone && !validPhone(phone)) { setErr('phone', 'Usa solo dígitos (6 a 15), con prefijo + opcional.'); ok = false; }
+    if (withdrawn === null) { setErr('withdrawn', 'Importe no válido. Ej.: 125,50'); ok = false; }
+    if (pending === null) { setErr('pending', 'Importe no válido. Ej.: 40,00'); ok = false; }
+    if (simCost === null) { setErr('simCost', 'Importe no válido. Ej.: 5,00'); ok = false; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(registeredAt)) { setErr('registeredAt', 'Elige una fecha.'); ok = false; }
+    if (!ok) { const bad = form.querySelector('.fg.bad .field'); if (bad) { bad.focus(); bad.scrollIntoView({ block: 'center' }); } return; }
+    // Posibles duplicados: se avisa una vez y se puede confirmar pulsando otra vez.
+    const warns = [];
+    // Al editar solo se avisa si el dato ha cambiado: un duplicado ya confirmado no vuelve a avisar.
+    const dupPhone = phone && !(editing && phoneKey(editing.phone) === phoneKey(phone)) && others.find(x => phoneKey(x.phone) === phoneKey(phone));
+    const dupUser = vintedUser && !(editing && norm(editing.vintedUser) === norm(vintedUser)) && others.find(x => norm(x.vintedUser) === norm(vintedUser));
+    const dupMail = email && !(editing && norm(editing.email) === norm(email)) && others.find(x => norm(x.email) === norm(email));
+    if (dupPhone) warns.push(`El teléfono ya está en <b>${esc(dupPhone.name)}</b>.`);
+    if (dupUser) warns.push(`El usuario de Vinted ya está en <b>${esc(dupUser.name)}</b>.`);
+    if (dupMail) warns.push(`El correo ya está en <b>${esc(dupMail.name)}</b>.`);
+    const sig = warns.join('|');
+    if (warns.length && warned !== sig) {
+      warned = sig;
+      $('#formAlert').innerHTML = `<div class="alert o">${ICON.users}<div><p>Posible registro duplicado:</p><ul>${warns.map(w => `<li>${w}</li>`).join('')}</ul><p style="margin-top:6px">Si es correcto, pulsa otra vez en «${editing ? 'Guardar cambios' : 'Añadir cuenta'}».</p></div></div>`;
+      form.scrollTop = 0; return;
+    }
+    const now = new Date().toISOString();
+    let secret = editing?.secret || null, has = { ...(editing?.has || {}) }, secretChanges = [];
+    const btn = $('#f-submit'); btn.disabled = true;
+    try {
+      if (secretsLoaded) {
+        if (!Vault.unlocked) { btn.disabled = false; toast('Las contraseñas se han bloqueado. Desbloquéalas y vuelve a guardar.', true); syncSecrets(); return; }
+        const vals = {};
+        $$('[data-secret]', form).forEach(i => { if (i.value.trim()) vals[i.dataset.secret] = i.value; });
+        secretChanges = Object.keys(SECRET).filter(k => (oldSecrets[k] || '') !== (vals[k] || ''));
+        if (secretChanges.length || !editing) {
+          secret = await Vault.seal(vals);
+          has = Object.fromEntries(Object.keys(SECRET).map(k => [k, !!vals[k]]));
+        }
+      }
+      const acc = {
+        id: id || newId(), name, vintedUser, email, phone, operator,
+        simStatus: form.querySelector('input[name="f-sim-st"]:checked')?.value || 'activa',
+        deviceModel: $('#f-device').value.trim(),
+        accountStatus: form.querySelector('input[name="f-acc"]:checked')?.value || 'activa',
+        phoneStatus: form.querySelector('input[name="f-mob"]:checked')?.value || 'activo',
+        withdrawn, pending, simCost, registeredAt, lastWithdrawalAt, notes: $('#f-notes').value.trim(),
+        secret, has, createdAt: editing?.createdAt || now, updatedAt: now,
+      };
+      await Store.putAccount(acc);
+      if (!editing) Store.addHistory(acc.id, { at: now, kind: 'create', changes: snapshotFields(acc) });
+      else {
+        const changes = diff(editing, acc).concat(secretChanges.map(k => ({ f: k, secret: true })));
+        if (changes.length) Store.addHistory(acc.id, { at: now, kind: 'edit', changes });
+      }
+      closeLayer();
+      toast(editing ? 'Cambios guardados' : 'Cuenta añadida');
+    } catch (err) { btn.disabled = false; toast(errMsg(err), true); }
+  });
+}
+
+/* ---------- Historial ---------- */
+const FIELD_LABEL = { accountStatus:'Estado de la cuenta', phoneStatus:'Estado del móvil', simStatus:'Estado de la SIM', withdrawn:'Saldo retirado', pending:'Saldo pendiente', simCost:'Coste SIM', name:'Nombre', vintedUser:'Usuario de Vinted', email:'Correo', phone:'Teléfono', operator:'Operador', deviceModel:'Modelo del móvil', registeredAt:'Fecha de registro', lastWithdrawalAt:'Última retirada', notes:'Notas', ...SECRET };
+const fmtField = (f, v) => {
+  if (['withdrawn','pending','simCost'].includes(f)) return money(v);
+  if (f === 'accountStatus') return ACC[v]?.label || v;
+  if (f === 'phoneStatus') return MOB[v]?.label || v;
+  if (f === 'simStatus') return SIM[v]?.label || v;
+  if (f === 'registeredAt' || f === 'lastWithdrawalAt') return v ? fmtDate(v) : '—';
+  return v || '—';
+};
+function diff(a, b) {
+  const out = [];
+  for (const f of ['accountStatus','phoneStatus','simStatus','withdrawn','pending','simCost','name','vintedUser','operator','deviceModel','registeredAt','lastWithdrawalAt']) {
+    const x = f === 'simStatus' ? simStatus(a) : (a[f] ?? ''), y = f === 'simStatus' ? simStatus(b) : (b[f] ?? '');
+    if (x !== y) out.push({ f, from: x, to: y });
+  }
+  // El historial nunca guarda el teléfono ni el correo completos.
+  if ((a.phone || '') !== (b.phone || '')) out.push({ f: 'phone', from: maskPhone(a.phone), to: maskPhone(b.phone) });
+  if (norm(a.email) !== norm(b.email)) out.push({ f: 'email', from: maskEmail(a.email), to: maskEmail(b.email) });
+  if ((a.notes || '') !== (b.notes || '')) out.push({ f: 'notes', note: true });
+  return out;
+}
+const snapshotFields = a => [
+  { f:'accountStatus', to:a.accountStatus }, { f:'phoneStatus', to:a.phoneStatus }, { f:'simStatus', to:simStatus(a) },
+  { f:'withdrawn', to:a.withdrawn }, { f:'pending', to:a.pending }, { f:'simCost', to:a.simCost },
+];
+async function loadHistory(id) {
+  const h = await Store.getHistory(id);
+  if (UI.detailId !== id) return;
+  UI.history = h; renderHistory();
+}
+function renderHistory() {
+  const box = $('#histBox'); if (!box) return;
+  const h = UI.history;
+  if (h === undefined || h === 'loading') { box.innerHTML = '<p class="muted" style="margin:0">Cargando historial…</p>'; return; }
+  if (h === null) { box.innerHTML = '<p class="muted" style="margin:0">No se pudo cargar el historial.</p>'; return; }
+  if (!h.length) { box.innerHTML = '<p class="muted" style="margin:0">Sin cambios registrados todavía.</p>'; return; }
+  const kindLabel = { create:'Cuenta creada', edit:'Edición', quick:'Cambio rápido de estado', import:'Importada desde CSV' };
+  box.innerHTML = `<ul class="timeline">${h.map(ev => `<li><div class="when">${esc(fmtDateTime(ev.at))} · ${kindLabel[ev.kind] || 'Cambio'}</div>${(ev.changes || []).map(c => {
+    const lab = FIELD_LABEL[c.f] || c.f;
+    if (c.note) return `<div class="chg">Notas actualizadas</div>`;
+    if (c.secret) return `<div class="chg">${lab}: <b>actualizada</b></div>`;
+    if (ev.kind === 'create' || ev.kind === 'import') return `<div class="chg">${lab}: <b>${esc(fmtField(c.f, c.to))}</b></div>`;
+    return `<div class="chg">${lab}: ${esc(fmtField(c.f, c.from))} → <b>${esc(fmtField(c.f, c.to))}</b></div>`;
+  }).join('')}</li>`).join('')}</ul>`;
+}
+
+/* ---------- Ficha de detalle ---------- */
+const DTABS = [['resumen', 'Resumen', ICON.chart], ['accesos', 'Accesos', ICON.lock], ['sim', 'SIM y móvil', ICON.sim], ['historial', 'Historial', ICON.history]];
+let detailReveal = new Set(), detailSecrets = null;
+function openDetail(id, tab) {
+  if (!Store.accounts.get(id)) return;
+  UI.detailId = id; UI.detailTab = tab || 'resumen'; UI.history = 'loading';
+  detailReveal = new Set(UI.showPrivate ? ['phone', 'email'] : []); detailSecrets = null;
+  openLayer(`<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dTitle"></aside>`, { drawer: true, onClose: () => { UI.detailId = null; detailSecrets = null; } });
+  renderDetail();
+  loadHistory(id);
+  $('#drawer [data-close]')?.focus();
+}
+function plainRow(label, field, value, shown, maskFn) {
+  if (!value) return `<div class="srow"><span class="l">${label}</span><span class="v muted">Sin guardar</span></div>`;
+  const masked = maskFn && !shown;
+  return `<div class="srow"><span class="l">${label}</span><span class="v ${field === 'phone' ? 'mono' : ''}">${esc(masked ? maskFn(value) : (field === 'phone' ? showPhone(value) : value))}</span>
+    <span class="b">${maskFn ? `<button class="icon-btn sm" type="button" data-dact="reveal" data-f="${field}" aria-label="${shown ? 'Ocultar' : 'Mostrar'} ${label}" title="${shown ? 'Ocultar' : 'Mostrar'}">${shown ? ICON.eyeOff : ICON.eye}</button>` : ''}<button class="icon-btn sm" type="button" data-dact="copy" data-f="${field}" aria-label="Copiar ${label}" title="Copiar">${ICON.copy}</button></span></div>`;
+}
+function secretRow(a, k) {
+  const label = SECRET[k];
+  if (!hasField(a, k)) return `<div class="srow"><span class="l">${label}</span><span class="v muted">Sin guardar</span></div>`;
+  if (!Vault.unlocked) return `<div class="srow"><span class="l">${label}</span><span class="v secret muted">•••••••• bloqueada</span></div>`;
+  const shown = detailReveal.has(k), val = detailSecrets ? (detailSecrets[k] || '') : null;
+  return `<div class="srow"><span class="l">${label}</span><span class="v secret">${val === null ? 'Descifrando…' : esc(shown ? val : '••••••••')}</span>
+    <span class="b"><button class="icon-btn sm" type="button" data-dact="reveal" data-f="${k}" aria-label="${shown ? 'Ocultar' : 'Mostrar'} ${label}" title="${shown ? 'Ocultar' : 'Mostrar'}">${shown ? ICON.eyeOff : ICON.eye}</button><button class="icon-btn sm" type="button" data-dact="copysecret" data-f="${k}" aria-label="Copiar ${label}" title="Copiar">${ICON.copy}</button></span></div>`;
+}
+function renderDetail() {
+  const d = $('#drawer'); if (!d) return;
+  const a = Store.accounts.get(UI.detailId);
+  if (!a) { closeLayer(); return; }
+  if (!Vault.unlocked) detailSecrets = null;
+  else if (!a.secret) detailSecrets = {};
+  else if (!detailSecrets || detailSecrets._ct !== a.secret.ct) {
+    const ct = a.secret.ct;
+    Vault.read(a).then(s => { if (UI.detailId === a.id && s && Vault.unlocked) { detailSecrets = { ...s, _ct: ct }; renderDetail(); } });
+  }
+  const tot = totalOf(a), net = tot - (a.simCost || 0), miss = missing(a);
+  const s = SIM[simStatus(a)];
+  const scroll = d.scrollTop;
+  const tab = UI.detailTab;
+  let body = '';
+  if (tab === 'resumen') {
+    const days = daysSince(a.registeredAt);
+    body = `
+      <div class="figs">
+        <div class="fig total"><span class="l">Dinero total registrado</span><span class="v">${money(tot)}</span><div class="split" aria-hidden="true"><span class="w" style="width:${tot ? (a.withdrawn || 0) / tot * 100 : 0}%"></span><span class="p" style="width:${tot ? (a.pending || 0) / tot * 100 : 0}%"></span></div></div>
+        <div class="fig"><span class="l">Saldo retirado</span><span class="v c-g">${money(a.withdrawn)}</span></div>
+        <div class="fig"><span class="l">Saldo pendiente</span><span class="v c-o">${money(a.pending)}</span></div>
+        <div class="fig"><span class="l">Coste de la SIM</span><span class="v">−${money(a.simCost)}</span></div>
+        <div class="fig"><span class="l">Retirado sobre total</span><span class="v">${tot ? Math.round((a.withdrawn || 0) / tot * 100) + ' %' : '—'}</span></div>
+        <div class="fig est"><span class="l">Balance neto estimado<span class="tag">Estimación</span></span><span class="v c-b">${money(net)}</span><span class="l">Dinero total menos coste de la SIM. No incluye otros gastos.</span></div>
+      </div>
+      ${miss.length ? `<div class="alert o">${ICON.note}<p>Falta: ${miss.map(m => m[1]).join(', ')}. <button class="link-btn" type="button" data-dact="edit">Completar ficha</button></p></div>` : ''}
+      <div class="d-sec"><h4>Fechas</h4>
+        <dl class="kv"><dt>Fecha de registro</dt><dd class="num">${fmtDate(a.registeredAt)}${days !== null && days >= 0 ? ` <span class="muted">(hace ${days} ${days === 1 ? 'día' : 'días'})</span>` : ''}</dd>
+        <dt>Última retirada</dt><dd class="num">${a.lastWithdrawalAt ? fmtDate(a.lastWithdrawalAt) : '—'}</dd>
+        <dt>Añadida a la app</dt><dd class="num">${a.createdAt ? esc(fmtDateTime(a.createdAt)) : '—'}</dd>
+        <dt>Última modificación</dt><dd class="num">${a.updatedAt ? esc(fmtDateTime(a.updatedAt)) : '—'}</dd></dl>
+      </div>
+      <div class="d-sec"><h4>Notas</h4>${a.notes ? `<div class="note-box">${esc(a.notes)}</div>` : '<p class="muted" style="margin:0">Sin notas.</p>'}</div>`;
+  } else if (tab === 'accesos') {
+    body = `
+      ${['vintedPassword', 'emailPassword'].some(k => hasField(a, k)) ? vaultBox() : ''}
+      <div class="cred"><div class="cred-h"><span class="ico b">${ICON.user}</span>Vinted</div>
+        ${plainRow('Usuario de Vinted', 'vintedUser', a.vintedUser, true)}
+        ${secretRow(a, 'vintedPassword')}</div>
+      <div class="cred"><div class="cred-h"><span class="ico b">${ICON.mail}</span>Correo electrónico</div>
+        ${plainRow('Correo', 'email', a.email, detailReveal.has('email'), maskEmail)}
+        ${secretRow(a, 'emailPassword')}</div>`;
+  } else if (tab === 'sim') {
+    body = `
+      ${['simPin', 'simPuk', 'phoneLock'].some(k => hasField(a, k)) ? vaultBox() : ''}
+      <div class="cred"><div class="cred-h"><span class="ico">${ICON.sim}</span>SIM<span class="pill-static t-${s.t}" style="margin-left:auto">${esc(s.label)}</span></div>
+        ${plainRow('Número de teléfono', 'phone', a.phone, detailReveal.has('phone'), maskPhone)}
+        <div class="srow"><span class="l">Operador</span><span class="v">${esc(a.operator || '—')}</span></div>
+        ${secretRow(a, 'simPin')}
+        ${secretRow(a, 'simPuk')}
+        <div class="srow"><span class="l">Coste de la SIM</span><span class="v num">${money(a.simCost)}</span></div></div>
+      <div class="cred"><div class="cred-h"><span class="ico">${ICON.phone}</span>Móvil<span class="pill-static t-${MOB[a.phoneStatus]?.t || 'n'}" style="margin-left:auto">${esc(MOB[a.phoneStatus]?.label || '—')}</span></div>
+        <div class="srow"><span class="l">Modelo</span><span class="v">${esc(a.deviceModel || '—')}</span></div>
+        ${secretRow(a, 'phoneLock')}</div>`;
+  } else body = `<div id="histBox"></div>`;
+
+  d.innerHTML = `
+    <div class="modal-h"><h2 id="dTitle">Ficha de cuenta</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b">
+      <div class="d-hero">${avatar(a)}<div style="min-width:0;display:flex;flex-direction:column;gap:6px">
+        <p class="nm">${esc(a.name)}</p>${a.vintedUser ? `<span class="handle">@${esc(a.vintedUser)}</span>` : ''}
+        <div class="row" style="gap:6px"><span class="pill-static t-${ACC[a.accountStatus]?.t || 'n'}">Cuenta ${esc((ACC[a.accountStatus]?.label || '').toLowerCase())}</span><span class="pill-static t-${MOB[a.phoneStatus]?.t || 'n'}">Móvil ${esc((MOB[a.phoneStatus]?.label || '').toLowerCase())}</span><span class="pill-static t-${s.t}">SIM ${esc(s.label.toLowerCase())}</span></div></div></div>
+      <div class="tabs" role="tablist">${DTABS.map(([k, l, ic]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${tab === k}">${small(ic)}${l}</button>`).join('')}</div>
+      ${body}
+    </div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-dact="delete" style="color:var(--red)">${ICON.trash}Eliminar</button><button class="btn primary" type="button" data-dact="edit">${ICON.edit}Editar cuenta</button></div>`;
+  d.scrollTop = scroll;
+  if (tab === 'historial') renderHistory();
+}
+$('#layer').addEventListener('click', e => {
+  if (!$('#drawer')) return;
+  const tb = e.target.closest('[data-tab]');
+  if (tb) { UI.detailTab = tb.dataset.tab; renderDetail(); $(`#drawer [data-tab="${UI.detailTab}"]`)?.focus(); return; }
+  const b = e.target.closest('[data-dact],[data-close]'); if (!b) return;
+  if (b.hasAttribute('data-close')) return closeLayer();
+  const id = UI.detailId, a = Store.accounts.get(id); if (!a) return;
+  const act = b.dataset.dact, f = b.dataset.f;
+  if (act === 'reveal') { detailReveal.has(f) ? detailReveal.delete(f) : detailReveal.add(f); renderDetail(); }
+  if (act === 'copy') copyText(a[f], FIELD_LABEL[f] || 'Dato');
+  if (act === 'copysecret' && detailSecrets && detailSecrets[f]) copyText(detailSecrets[f], SECRET[f]);
+  if (act === 'edit') openForm(id, UI.detailTab === 'accesos' ? 'vinted' : UI.detailTab === 'sim' ? 'sim' : null);
+  if (act === 'delete') confirmDelete(id);
+});
+
+/* ---------- Copia rápida desde las fichas ---------- */
+async function quickCopy(id, field) {
+  const a = Store.accounts.get(id); if (!a) return;
+  if (!SECRET[field]) return copyText(a[field], FIELD_LABEL[field]);
+  if (!Vault.unlocked) { openDetail(id, 'accesos'); return; }
+  const s = await Vault.read(a);
+  if (s && s[field]) copyText(s[field], SECRET[field]);
+  else toast('No se pudo descifrar la contraseña', true);
+}
+
+/* ---------- Eliminar ---------- */
+function confirmDelete(id) {
+  const a = Store.accounts.get(id); if (!a) return;
+  const root = openLayer(`<div class="modal narrow" role="alertdialog" aria-labelledby="delT" aria-describedby="delD">
+    <div class="modal-h"><h2 id="delT">Eliminar cuenta</h2></div>
+    <div class="modal-b"><p id="delD" style="margin:0">Vas a eliminar <b>${esc(a.name)}</b> (${money(totalOf(a))} registrados) junto con sus accesos guardados y su historial. Esta acción no se puede deshacer.</p></div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-c="no" autofocus>Cancelar</button><button class="btn danger" type="button" data-c="yes">Eliminar definitivamente</button></div></div>`);
+  root.addEventListener('click', async e => {
+    const c = e.target.closest('[data-c]')?.dataset.c; if (!c) return;
+    if (c === 'no') return closeLayer();
+    e.target.disabled = true;
+    try { await Store.removeAccount(id); closeLayer(); toast('Cuenta eliminada'); }
+    catch (err) { e.target.disabled = false; toast(errMsg(err), true); }
+  });
+}
+
+/* ---------- Bóveda desde la cabecera ---------- */
+function openVaultModal() {
+  if (Vault.unlocked) { Vault.lock(); toast('Contraseñas bloqueadas'); return; }
+  const root = openLayer(`<div class="modal narrow"><div class="modal-h"><h2>${Vault.exists ? 'Desbloquear contraseñas' : 'Clave maestra'}</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b">${vaultBox()}<p class="muted" style="margin:0;font-size:12.5px">Se vuelven a bloquear solas tras 30 minutos sin actividad.</p></div></div>`);
+  root.addEventListener('click', e => { if (e.target.closest('[data-close]')) closeLayer(); });
+  const onV = () => { document.removeEventListener('vaultchange', onV); if (Vault.unlocked && document.contains(root)) closeLayer(); };
+  document.addEventListener('vaultchange', onV);
+}
+
+/* ---------- Coste de SIM por defecto ---------- */
+function openSimSettings() {
+  const def = Store.settings.defaultSimCost ?? 500;
+  const simyos = [...Store.accounts.values()].filter(a => isSimyo(a.operator));
+  const root = openLayer(`<form class="modal narrow" id="simForm" novalidate>
+    <div class="modal-h"><h2>Coste de SIM</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b">
+      <div class="fg" data-f="cost"><label for="s-cost">Coste por defecto de cada SIM Simyo</label><div class="money-in"><input class="field" id="s-cost" inputmode="decimal" value="${moneyPlain(def)}" autofocus><span>€</span></div><span class="hint">Se aplica a las cuentas nuevas con operador Simyo. Cada cuenta puede tener su propio coste.</span><span class="err"></span></div>
+      ${simyos.length ? `<label class="check"><input type="checkbox" id="s-all"><span>Aplicar también a las ${simyos.length} ${simyos.length === 1 ? 'SIM Simyo ya registrada' : 'SIM Simyo ya registradas'}</span></label>` : ''}
+    </div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-close>Cancelar</button><button class="btn primary" type="submit">Guardar</button></div></form>`);
+  const form = $('#simForm', root);
+  form.addEventListener('click', e => { if (e.target.closest('[data-close]')) closeLayer(); });
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const cost = parseMoney($('#s-cost').value);
+    const g = form.querySelector('[data-f="cost"]');
+    if (cost === null) { g.classList.add('bad'); g.querySelector('.err').textContent = 'Importe no válido. Ej.: 5,00'; return; }
+    const all = $('#s-all')?.checked;
+    try {
+      await Store.saveSettings({ defaultSimCost: cost });
+      if (all) {
+        const now = new Date().toISOString();
+        for (const a of simyos) {
+          if ((a.simCost || 0) === cost) continue;
+          await Store.putAccount({ ...a, simCost: cost, updatedAt: now });
+          Store.addHistory(a.id, { at: now, kind: 'edit', changes: [{ f: 'simCost', from: a.simCost || 0, to: cost }] });
+        }
+      }
+      closeLayer(); toast('Coste de SIM actualizado');
+    } catch (err) { toast(errMsg(err), true); }
+  });
+}
+
+/* ---------- CSV ---------- */
+const CSV_BASE = [['name','Cuenta'],['vintedUser','Usuario Vinted'],['email','Correo'],['operator','Operador'],['phone','Teléfono'],['simStatus','Estado SIM'],['accountStatus','Estado cuenta'],['phoneStatus','Estado móvil'],['deviceModel','Modelo móvil'],['withdrawn','Saldo retirado'],['pending','Saldo pendiente'],['total','Dinero total'],['simCost','Coste SIM'],['registeredAt','Fecha registro'],['lastWithdrawalAt','Última retirada'],['notes','Notas']];
+const CSV_SECRET = [['vintedPassword','Contraseña Vinted'],['emailPassword','Contraseña correo'],['simPin','PIN SIM'],['simPuk','PUK SIM'],['phoneLock','Bloqueo móvil']];
+const csvCell = v => { const s = String(v ?? ''); return /[";\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+async function buildCsv(withSecrets) {
+  const rows = [...Store.accounts.values()].sort((a, b) => (a.registeredAt || '').localeCompare(b.registeredAt || ''));
+  const cols = withSecrets ? CSV_BASE.concat(CSV_SECRET) : CSV_BASE;
+  const lines = [cols.map(c => c[1]).join(';')];
+  for (const a of rows) {
+    const s = withSecrets ? (await Vault.read(a)) || {} : {};
+    const val = k => {
+      if (['withdrawn','pending','simCost'].includes(k)) return moneyPlain(a[k]);
+      if (k === 'total') return moneyPlain(totalOf(a));
+      if (k === 'accountStatus') return ACC[a.accountStatus]?.label;
+      if (k === 'phoneStatus') return MOB[a.phoneStatus]?.label;
+      if (k === 'simStatus') return SIM[simStatus(a)].label;
+      if (k === 'registeredAt' || k === 'lastWithdrawalAt') return a[k] ? fmtDate(a[k]) : '';
+      if (SECRET[k]) return s[k] || '';
+      return a[k] || '';
+    };
+    lines.push(cols.map(([k]) => csvCell(val(k))).join(';'));
+  }
+  return '﻿' + lines.join('\r\n') + '\r\n';
+}
+function openExport() {
+  if (!Store.accounts.size) { toast('No hay cuentas que exportar'); return; }
+  const anySecret = [...Store.accounts.values()].some(a => a.secret);
+  const root = openLayer(`<div class="modal narrow"><div class="modal-h"><h2>Exportar CSV</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b" id="expBody"></div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-close>Cancelar</button><button class="btn primary" type="button" id="doExport">Exportar ${Store.accounts.size} ${Store.accounts.size === 1 ? 'cuenta' : 'cuentas'}</button></div></div>`);
+  const body = () => {
+    $('#expBody').innerHTML = `<p style="margin:0;color:var(--fg-2)">El archivo se abre en Excel o Google Sheets y sirve para volver a importarlo aquí.</p>
+      ${anySecret ? `<label class="check"><input type="checkbox" id="expSecrets" ${Vault.unlocked ? '' : 'disabled'}><span>Incluir contraseñas, PIN y códigos<br><span class="muted" style="font-size:12.5px">El archivo quedará sin cifrar: guárdalo en un lugar seguro.</span></span></label>${Vault.unlocked ? '' : vaultBox('Desbloquea si quieres incluir contraseñas en el archivo.')}` : ''}`;
+  };
+  body();
+  const onV = () => { if (document.contains(root)) body(); else document.removeEventListener('vaultchange', onV); };
+  document.addEventListener('vaultchange', onV);
+  root.addEventListener('click', async e => {
+    if (e.target.closest('[data-close]')) return closeLayer();
+    if (!e.target.closest('#doExport')) return;
+    const csv = await buildCsv(!!$('#expSecrets')?.checked && Vault.unlocked);
+    saveCsv(csv);
+  });
+}
+async function saveCsv(csv) {
+  const filename = `cuentas-vinted-${today()}.csv`;
+  let dl = null;
+  try { dl = window.claude && await window.claude.use('downloads'); } catch { dl = null; }
+  if (dl) {
+    try { await dl.save({ filename, data: csv }); closeLayer(); toast('CSV exportado'); return; }
+    catch (e) { if (e && e.code === 'declined') return; if (e && e.code === 'rate_limited') { toast('Ya hay una descarga pendiente de confirmar', true); return; } }
+  }
+  const root = openLayer(`<div class="modal"><div class="modal-h"><h2>Exportar CSV</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b"><p style="margin:0;color:var(--fg-2)">La descarga directa no está disponible aquí. Copia el contenido y pégalo en un archivo <span class="mono">.csv</span>.</p><textarea class="field mono" id="csvOut" rows="10" readonly></textarea></div>
+    <div class="modal-f"><button class="btn primary" type="button" id="csvCopy">${ICON.copy}Copiar</button></div></div>`);
+  $('#csvOut', root).value = csv.replace(/^﻿/, '');
+  root.addEventListener('click', async e => {
+    if (e.target.closest('[data-close]')) return closeLayer();
+    if (e.target.closest('#csvCopy')) {
+      try { await navigator.clipboard.writeText($('#csvOut').value); toast('CSV copiado'); }
+      catch { $('#csvOut').select(); toast('Texto seleccionado: cópialo con Ctrl+C'); }
+    }
+  });
+}
+function parseCsv(text) {
+  text = text.replace(/^﻿/, '');
+  const firstLine = text.split(/\r?\n/)[0] || '';
+  const sep = [';', ',', '\t'].map(s => [s, firstLine.split(s).length]).sort((a, b) => b[1] - a[1])[0][0];
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === sep) { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += ch;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(c => c.trim() !== ''));
+}
+const HEADER_MAP = {
+  name: ['cuenta','nombre','identificador','account','nombre de la cuenta'],
+  vintedUser: ['usuario vinted','usuario de vinted','usuario','user','username'],
+  email: ['correo','correo electronico','email','e-mail','mail'],
+  operator: ['operador','operador telefonico','compania','operator'],
+  phone: ['telefono','numero','movil','phone','numero de telefono','sim / telefono'],
+  simStatus: ['estado sim','estado de la sim'],
+  accountStatus: ['estado cuenta','estado de la cuenta','estado'],
+  phoneStatus: ['estado movil','estado del movil'],
+  deviceModel: ['modelo movil','modelo del movil','modelo','dispositivo'],
+  withdrawn: ['saldo retirado','retirado'],
+  pending: ['saldo pendiente','pendiente'],
+  simCost: ['coste sim','coste de la sim','coste'],
+  registeredAt: ['fecha registro','fecha de registro','fecha','registro'],
+  lastWithdrawalAt: ['ultima retirada','fecha ultima retirada'],
+  notes: ['notas','observaciones','notes'],
+  vintedPassword: ['contrasena vinted','contrasena de vinted','password vinted'],
+  emailPassword: ['contrasena correo','contrasena del correo','password correo','contrasena email'],
+  simPin: ['pin sim','pin de la sim','pin'],
+  simPuk: ['puk sim','puk de la sim','puk'],
+  phoneLock: ['bloqueo movil','codigo de bloqueo','bloqueo','patron'],
+};
+const mapAcc = v => { const s = norm(v); if (!s) return 'activa'; if (s.startsWith('ban')) return 'baneada'; if (s.includes('revis') || s.startsWith('pend')) return 'revision'; if (s.startsWith('activ')) return 'activa'; return null; };
+const mapMob = v => { const s = norm(v); if (!s) return 'activo'; if (s.startsWith('aver') || s.includes('roto')) return 'averiado'; if (s.startsWith('inact')) return 'inactivo'; if (s.startsWith('activ')) return 'activo'; return null; };
+const mapSim = v => { const s = norm(v); if (!s) return 'activa'; if (s.startsWith('bloq')) return 'bloqueada'; if (s.includes('baja')) return 'baja'; if (s.startsWith('activ')) return 'activa'; return null; };
+function parseDate(v, fallback) {
+  const s = String(v || '').trim(); if (!s) return fallback;
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s); if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(s); if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return null;
+}
+function analyzeImport(text) {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return { error: 'El archivo no tiene filas de datos.' };
+  const head = rows[0].map(norm);
+  const idx = {};
+  for (const [f, names] of Object.entries(HEADER_MAP)) { const i = head.findIndex(h => names.includes(h)); if (i >= 0) idx[f] = i; }
+  if (idx.name === undefined) return { error: 'No se encuentra la columna «Cuenta». Usa la misma cabecera que el CSV exportado.' };
+  const existingNames = new Set([...Store.accounts.values()].map(a => norm(a.name)));
+  const def = Store.settings.defaultSimCost ?? 500;
+  const ok = [], dup = [], bad = [];
+  rows.slice(1).forEach((r, n) => {
+    const get = f => idx[f] === undefined ? '' : (r[idx[f]] ?? '').trim();
+    const line = n + 2;
+    const name = get('name').replace(/\s+/g, ' ');
+    if (!name) { bad.push(`Fila ${line}: falta el nombre de la cuenta`); return; }
+    if (existingNames.has(norm(name))) { dup.push(`Fila ${line}: «${name}» ya existe`); return; }
+    const phone = cleanPhone(get('phone'));
+    if (phone && !validPhone(phone)) { bad.push(`Fila ${line}: teléfono no válido`); return; }
+    const email = get('email');
+    if (email && !validEmail(email)) { bad.push(`Fila ${line}: correo no válido`); return; }
+    const operator = get('operator');
+    const withdrawn = parseMoney(get('withdrawn')), pending = parseMoney(get('pending'));
+    const simRaw = get('simCost');
+    const simCost = simRaw === '' ? (isSimyo(operator) ? def : 0) : parseMoney(simRaw);
+    if (withdrawn === null || pending === null || simCost === null) { bad.push(`Fila ${line}: importe no válido`); return; }
+    const accountStatus = mapAcc(get('accountStatus')), phoneStatus = mapMob(get('phoneStatus')), sim = mapSim(get('simStatus'));
+    if (!accountStatus || !phoneStatus || !sim) { bad.push(`Fila ${line}: estado no reconocido`); return; }
+    const registeredAt = parseDate(get('registeredAt'), today()), lastWithdrawalAt = parseDate(get('lastWithdrawalAt'), '');
+    if (registeredAt === null || lastWithdrawalAt === null) { bad.push(`Fila ${line}: fecha no válida`); return; }
+    const secrets = {};
+    for (const k of Object.keys(SECRET)) { const v = idx[k] === undefined ? '' : (r[idx[k]] ?? ''); if (v.trim()) secrets[k] = v; }
+    existingNames.add(norm(name));
+    ok.push({ name, vintedUser: get('vintedUser').replace(/^@/, ''), email, phone, operator, simStatus: sim, deviceModel: get('deviceModel'), accountStatus, phoneStatus, withdrawn, pending, simCost, registeredAt, lastWithdrawalAt, notes: get('notes'), _secrets: secrets });
+  });
+  return { ok, dup, bad, withSecrets: ok.some(a => Object.keys(a._secrets).length) };
+}
+function openImport(text, fileName) {
+  const r = analyzeImport(text);
+  const list = items => `<ul class="import-list">${items.slice(0, 50).map(s => `<li>${esc(s)}</li>`).join('')}${items.length > 50 ? `<li>… y ${items.length - 50} más</li>` : ''}</ul>`;
+  const root = openLayer(`<div class="modal"><div class="modal-h"><h2>Importar CSV</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b" id="impBody"></div><div class="modal-f" id="impFoot"></div></div>`);
+  const draw = () => {
+    const locked = r.withSecrets && !Vault.unlocked;
+    $('#impBody').innerHTML = `<p style="margin:0;color:var(--fg-2)">Archivo: <span class="mono">${esc(fileName)}</span></p>
+      ${r.error ? `<div class="alert r"><p>${esc(r.error)}</p></div>` : `
+      <div class="alert b"><p><b>${r.ok.length}</b> ${r.ok.length === 1 ? 'cuenta lista' : 'cuentas listas'} para importar · ${money(r.ok.reduce((s, a) => s + a.withdrawn + a.pending, 0))} en total.</p></div>
+      ${r.withSecrets ? (locked ? vaultBox('El archivo trae contraseñas o códigos. Desbloquea para guardarlos cifrados, o importa sin ellos.') : `<div class="alert g">${ICON.shield}<p>Las contraseñas y códigos del archivo se guardarán cifrados.</p></div>`) : ''}
+      ${r.dup.length ? `<div class="d-sec"><h4>Se omitirán por duplicadas (${r.dup.length})</h4>${list(r.dup)}</div>` : ''}
+      ${r.bad.length ? `<div class="d-sec"><h4>Con errores, no se importarán (${r.bad.length})</h4>${list(r.bad)}</div>` : ''}`}`;
+    $('#impFoot').innerHTML = `<button class="btn ghost" type="button" data-close>Cancelar</button>${!r.error && r.ok.length ? `<button class="btn primary" type="button" id="doImport">Importar ${r.ok.length} ${r.ok.length === 1 ? 'cuenta' : 'cuentas'}${locked ? ' sin contraseñas' : ''}</button>` : ''}`;
+  };
+  draw();
+  const onV = () => { if (document.contains(root)) draw(); else document.removeEventListener('vaultchange', onV); };
+  document.addEventListener('vaultchange', onV);
+  root.addEventListener('click', async e => {
+    if (e.target.closest('[data-close]')) return closeLayer();
+    const btn = e.target.closest('#doImport'); if (!btn) return;
+    btn.disabled = true;
+    let done = 0;
+    try {
+      for (const row of r.ok) {
+        const { _secrets, ...a } = row;
+        const now = new Date().toISOString();
+        let secret = null, has = {};
+        if (Vault.unlocked && Object.keys(_secrets).length) { secret = await Vault.seal(_secrets); has = Object.fromEntries(Object.keys(SECRET).map(k => [k, !!_secrets[k]])); }
+        const acc = { ...a, secret, has, id: newId(), createdAt: now, updatedAt: now };
+        await Store.putAccount(acc);
+        Store.addHistory(acc.id, { at: now, kind: 'import', changes: snapshotFields(acc) });
+        done++; btn.textContent = `Importando… ${done}/${r.ok.length}`;
+      }
+      closeLayer(); toast(`${done} ${done === 1 ? 'cuenta importada' : 'cuentas importadas'}`);
+    } catch (err) { closeLayer(); toast(`Se importaron ${done} de ${r.ok.length}. ${errMsg(err)}`, true); }
+  });
+}
+$('#fileInput').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  if (f.size > 5 * 1024 * 1024) { toast('El archivo es demasiado grande (máx. 5 MB)', true); return; }
+  const rd = new FileReader();
+  rd.onload = () => openImport(String(rd.result || ''), f.name);
+  rd.onerror = () => toast('No se pudo leer el archivo', true);
+  rd.readAsText(f, 'utf-8');
+});
+
+/* ---------- Eventos ---------- */
+const startImport = () => $('#fileInput').click();
+$('#btnAdd').addEventListener('click', () => openForm());
+$('#btnImport').addEventListener('click', startImport);
+$('#btnExport').addEventListener('click', openExport);
+$('#vaultBadge').addEventListener('click', openVaultModal);
+let qTimer;
+$('#q').addEventListener('input', e => { clearTimeout(qTimer); qTimer = setTimeout(() => { UI.q = e.target.value.trim(); renderFilters(); renderList(); }, 120); });
+$('#fOp').addEventListener('change', e => { UI.op = e.target.value; changed(); });
+$('#fSim').addEventListener('change', e => { UI.sim = e.target.value; changed(); });
+$('#fFrom').addEventListener('change', e => { UI.from = e.target.value; changed(); });
+$('#fTo').addEventListener('change', e => { UI.to = e.target.value; changed(); });
+$('#btnMore').addEventListener('click', () => { UI.moreOpen = !UI.moreOpen; changed(); });
+$('#sortBy').addEventListener('change', e => { UI.sortBy = e.target.value; UI.sortDir = e.target.value === 'name' ? 'asc' : 'desc'; saveUi(); changed(); });
+$('#sortDir').addEventListener('click', () => { UI.sortDir = UI.sortDir === 'asc' ? 'desc' : 'asc'; saveUi(); changed(); });
+$('#togglePrivate').addEventListener('click', () => { UI.showPrivate = !UI.showPrivate; changed(); });
+$$('[data-view]').forEach(b => b.addEventListener('click', () => { UI.view = b.dataset.view; saveUi(); changed(); }));
+function clearFilters() {
+  Object.assign(UI, { chip: 'all', q: '', op: '', sim: '', from: '', to: '' });
+  $('#q').value = ''; $('#fFrom').value = ''; $('#fTo').value = ''; changed();
+}
+$('#clearFilters').addEventListener('click', clearFilters);
+$('#chips').addEventListener('click', e => { const c = e.target.closest('[data-chip]'); if (!c) return; UI.chip = c.dataset.chip; changed(); });
+$('#kpis').addEventListener('click', e => { if (e.target.closest('[data-act="sim-settings"]')) openSimSettings(); });
+$('#overview').addEventListener('click', e => {
+  const o = e.target.closest('[data-open]'); if (o) return openDetail(o.dataset.open);
+  if (e.target.closest('[data-act="show-incomplete"]')) { UI.chip = 'incompletas'; changed(); $('#chips').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+});
+$('#listArea').addEventListener('click', e => {
+  const s = e.target.closest('[data-sort]');
+  if (s) { const k = s.dataset.sort; if (UI.sortBy === k) UI.sortDir = UI.sortDir === 'asc' ? 'desc' : 'asc'; else { UI.sortBy = k; UI.sortDir = k === 'name' ? 'asc' : 'desc'; } saveUi(); changed(); return; }
+  const cp = e.target.closest('[data-copy]');
+  if (cp) { quickCopy(cp.dataset.id, cp.dataset.copy); return; }
+  const b = e.target.closest('[data-act]');
+  if (b) {
+    const act = b.dataset.act, id = b.dataset.id;
+    if (act === 'add') openForm();
+    else if (act === 'import') startImport();
+    else if (act === 'clear') clearFilters();
+    else if (act === 'view') openDetail(id);
+    else if (act === 'edit') openForm(id);
+    else if (act === 'delete') confirmDelete(id);
+    return;
+  }
+  if (e.target.closest('select,button,a,input')) return;
+  const row = e.target.closest('[data-row]'); if (row) openDetail(row.dataset.row);
+});
+$('#listArea').addEventListener('keydown', e => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.acard')) { e.preventDefault(); openDetail(e.target.dataset.row); }
+});
+$('#listArea').addEventListener('change', async e => {
+  const sel = e.target.closest('[data-quick]'); if (!sel) return;
+  const a = Store.accounts.get(sel.dataset.id); if (!a) return;
+  const f = sel.dataset.quick, v = sel.value;
+  if (a[f] === v) return;
+  const now = new Date().toISOString();
+  try {
+    await Store.putAccount({ ...a, [f]: v, updatedAt: now });
+    Store.addHistory(a.id, { at: now, kind: 'quick', changes: [{ f, from: a[f], to: v }] });
+    toast(`${f === 'accountStatus' ? 'Cuenta' : 'Móvil'}: ${(f === 'accountStatus' ? ACC : MOB)[v].label.toLowerCase()}`);
+  } catch (err) { toast(errMsg(err), true); }
+});
+
+renderKpis(); renderFilters();
+Store.init();
+})();
+</script>
+
+</body>
+</html>
