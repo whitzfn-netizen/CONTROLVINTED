@@ -342,6 +342,22 @@ textarea.field{resize:vertical;min-height:84px}
 .check{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
 .check input{margin-top:3px}
 
+/* Pestañas principales: VINTED · DEUDAS */
+.tabview{display:contents}
+.maintabs{display:flex;gap:6px;padding:5px;border:1px solid var(--line);border-radius:14px;background:var(--bg-2);width:max-content;max-width:100%;box-shadow:var(--shadow)}
+.maintabs button{border:0;background:transparent;border-radius:10px;padding:10px 20px;font-family:var(--f-display);font-weight:600;font-size:14px;letter-spacing:.06em;color:var(--muted);display:inline-flex;gap:9px;align-items:center;justify-content:center;transition:background .15s,color .15s}
+.maintabs button:hover{color:var(--fg)}
+.maintabs button[aria-selected="true"]{background:var(--card-2);color:var(--fg);box-shadow:0 0 0 1px var(--line-2) inset}
+.maintabs .em{font-size:16px;line-height:1}
+.maintabs .tab-n{font-family:var(--f-body);font-size:11.5px;font-weight:600;letter-spacing:0;min-width:20px;height:20px;padding:0 6px;border-radius:99px;display:inline-grid;place-items:center;background:var(--red-bg);color:var(--red)}
+
+/* Deudas */
+.dreason{font-size:12.5px;color:var(--fg-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dcov{margin-left:auto;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.pay-row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.pay-row b{font-variant-numeric:tabular-nums}
+.qbtn.go{color:var(--fg);border-color:var(--line-2)}
+@media (max-width:560px){ .maintabs{width:100%} .maintabs button{flex:1 1 0;padding:10px 12px} }
 @media (max-width:1080px){ .kpis{grid-template-columns:repeat(2,minmax(0,1fr))} .overview{grid-template-columns:1fr} }
 @media (max-width:780px){
   .table-wrap{overflow:visible}
@@ -378,6 +394,11 @@ textarea.field{resize:vertical;min-height:84px}
 </style>
 
 <div class="wrap">
+  <nav class="maintabs" id="mainTabs" role="tablist" aria-label="Secciones">
+    <button type="button" role="tab" id="tab-vinted" aria-controls="view-vinted" aria-selected="true" data-main-tab="vinted"><span class="em" aria-hidden="true">📦</span>VINTED</button>
+    <button type="button" role="tab" id="tab-deudas" aria-controls="view-deudas" aria-selected="false" tabindex="-1" data-main-tab="deudas"><span class="em" aria-hidden="true">💸</span>DEUDAS<span class="tab-n" id="tabDebtN" hidden></span></button>
+  </nav>
+  <div class="tabview" id="view-vinted" role="tabpanel" aria-labelledby="tab-vinted">
   <header class="top">
     <div class="brand">
       <h1>Control de cuentas Vinted</h1>
@@ -437,6 +458,49 @@ textarea.field{resize:vertical;min-height:84px}
     </div>
     <div id="listArea"><div class="loading">Cargando tus cuentas…</div></div>
   </section>
+  </div>
+
+  <div class="tabview" id="view-deudas" role="tabpanel" aria-labelledby="tab-deudas" hidden>
+  <header class="top">
+    <div class="brand">
+      <h1>Control de deudas</h1>
+      <p><span id="debtStoreBadge" class="badge"><span class="dot"></span><span>Conectando…</span></span></p>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="btnDebtBackup" type="button"><svg class="i" viewBox="0 0 24 24"><path d="M12 3 4.5 6v6c0 4.5 3.2 7.8 7.5 9 4.3-1.2 7.5-4.5 7.5-9V6L12 3Z"/><path d="m9 12 2 2 4-4"/></svg>Copia de las deudas</button>
+      <button class="btn primary" id="btnDebtAdd" type="button"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Añadir deuda</button>
+    </div>
+  </header>
+
+  <section class="kpis" id="debtKpis" aria-label="Resumen de deudas"></section>
+
+  <section class="panel" aria-label="Deudas">
+    <div class="toolbar">
+      <div class="row">
+        <div class="search">
+          <svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <label class="sr" for="dq">Buscar deuda</label>
+          <input id="dq" class="field" type="search" placeholder="Buscar por nombre de la persona o motivo" autocomplete="off">
+        </div>
+        <div class="sortbox">
+          <label class="sr" for="dSort">Ordenar por</label>
+          <select id="dSort" class="field">
+            <option value="urgent">Más urgentes primero</option>
+            <option value="pending">Mayor cantidad pendiente</option>
+            <option value="created">Más recientes</option>
+            <option value="name">Nombre (A-Z)</option>
+          </select>
+        </div>
+      </div>
+      <div class="chips" id="dChips" role="toolbar" aria-label="Filtrar por estado"></div>
+      <div class="meta-row">
+        <span id="dResult"></span>
+        <button class="link-btn" id="dClear" type="button" hidden>Quitar filtros</button>
+      </div>
+    </div>
+    <div id="debtArea"><div class="loading">Cargando tus deudas…</div></div>
+  </section>
+  </div>
 </div>
 <div id="layer"></div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
@@ -1838,8 +1902,575 @@ $('#listArea').addEventListener('change', async e => {
   } catch (err) { toast(errMsg(err), true); }
 });
 
+/* ==========================================================================
+   DEUDAS — módulo independiente de VINTED. Sus datos se guardan aparte
+   (colección «debts» o la clave local «vinted-control.debts.v1») y nunca
+   lee ni escribe cuentas, historial ni ajustes de VINTED.
+   ========================================================================== */
+
+/* ---------- Pestañas principales ---------- */
+const TAB_KEY = 'vinted-control.tab';
+function showTab(t, focus) {
+  $('#view-vinted').hidden = t !== 'vinted';
+  $('#view-deudas').hidden = t !== 'deudas';
+  $$('[data-main-tab]').forEach(b => { const on = b.dataset.mainTab === t; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; });
+  try { localStorage.setItem(TAB_KEY, t); } catch {}
+  if (focus) $(`[data-main-tab="${t}"]`).focus();
+}
+$('#mainTabs').addEventListener('click', e => { const b = e.target.closest('[data-main-tab]'); if (b) showTab(b.dataset.mainTab); });
+$('#mainTabs').addEventListener('keydown', e => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  e.preventDefault();
+  showTab($('#view-vinted').hidden ? 'vinted' : 'deudas', true);
+});
+try { showTab(localStorage.getItem(TAB_KEY) === 'deudas' ? 'deudas' : 'vinted'); } catch { showTab('vinted'); }
+
+/* ---------- Modelo ---------- */
+const DEBT_KEY = 'vinted-control.debts.v1';
+const DST = { pendiente:{label:'Pendiente', t:'o'}, parcial:{label:'Pago parcial', t:'b'}, vencida:{label:'Vencida', t:'r'}, pagada:{label:'Pagada', t:'g'} };
+const CAL = '<svg class="i" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>';
+const rid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const paidOf = d => Math.max(0, (d.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0));
+const pendingOf = d => Math.max(0, (d.original || 0) - paidOf(d));
+function debtStatus(d) {
+  if ((d.original || 0) > 0 && pendingOf(d) === 0) return 'pagada';
+  if (d.dueDate && d.dueDate < today()) return 'vencida';
+  return paidOf(d) > 0 ? 'parcial' : 'pendiente';
+}
+/** Marca la deuda como pagada (con fecha) cuando el pendiente llega a cero, y lo deshace si vuelve a quedar algo. */
+function settle(d) {
+  if (pendingOf(d) > 0) return { ...d, paidAt: '' };
+  const last = (d.payments || []).filter(p => p.amount > 0).map(p => p.date).sort().pop() || today();
+  return { ...d, paidAt: d.paidAt || last };
+}
+function dueInfo(d) {
+  if (!d.dueDate) return { txt: 'Sin fecha límite', cls: 'muted' };
+  if (debtStatus(d) === 'pagada') return { txt: `Fecha límite ${fmtDate(d.dueDate)}`, cls: '' };
+  const late = daysSince(d.dueDate);
+  if (late > 0) return { txt: `Vencida hace ${late} ${late === 1 ? 'día' : 'días'} (${fmtDate(d.dueDate)})`, cls: 'c-r' };
+  if (late === 0) return { txt: 'Vence hoy', cls: 'c-o' };
+  if (late >= -7) return { txt: `Vence en ${-late} ${late === -1 ? 'día' : 'días'} (${fmtDate(d.dueDate)})`, cls: 'c-o' };
+  return { txt: `Vence el ${fmtDate(d.dueDate)}`, cls: '' };
+}
+
+/* ---------- Almacenamiento propio ---------- */
+const Debts = {
+  mode: 'loading', db: null, items: new Map(), local: null,
+  async init() {
+    if (Store.mode === 'db' && Store.db && await this.tryDb(Store.db)) return;
+    this.useLocal();
+  },
+  tryDb(db) {
+    return new Promise(resolve => {
+      let first = true;
+      try {
+        db.collection('debts').onSnapshot(snap => {
+          this.mode = 'db'; this.db = db;
+          this.items = new Map(snap.docs.map(d => [d.id, { ...d.data(), id: d.id }]));
+          if (first) { first = false; resolve(true); }
+          debtChanged();
+        }, err => {
+          if (first) { first = false; resolve(false); return; }
+          toast(err && err.code === 'revoked' ? 'Se ha perdido el acceso a los datos.' : 'Se ha perdido la sincronización de las deudas. Recarga la página.', true);
+        });
+      } catch { resolve(false); }
+    });
+  },
+  useLocal() {
+    this.mode = 'local';
+    let data = null;
+    try { data = JSON.parse(localStorage.getItem(DEBT_KEY) || 'null'); } catch { data = null; }
+    this.local = data && typeof data === 'object' && data.debts && typeof data.debts === 'object' ? data : { debts: {} };
+    this.items = new Map(Object.entries(this.local.debts).map(([id, d]) => [id, { ...d, id }]));
+    debtChanged();
+  },
+  persist() {
+    try { localStorage.setItem(DEBT_KEY, JSON.stringify(this.local)); return true; }
+    catch { toast('Este navegador no permite guardar datos. Descarga una copia de las deudas para no perderlas.', true); return false; }
+  },
+  async put(d) {
+    const { id, ...data } = d;
+    if (this.mode === 'db') {
+      const prev = this.items.get(id);
+      this.items.set(id, d); debtChanged();
+      try { await this.db.collection('debts').doc(id).set(data); }
+      catch (e) { if (prev) this.items.set(id, prev); else this.items.delete(id); debtChanged(); throw e; }
+    } else {
+      this.local.debts[id] = data; this.items.set(id, d); this.persist(); debtChanged();
+    }
+  },
+  async remove(id) {
+    if (this.mode === 'db') {
+      const prev = this.items.get(id);
+      this.items.delete(id); debtChanged();
+      try { await this.db.collection('debts').doc(id).delete(); }
+      catch (e) { if (prev) this.items.set(id, prev); debtChanged(); throw e; }
+    } else {
+      delete this.local.debts[id]; this.items.delete(id); this.persist(); debtChanged();
+    }
+  },
+};
+
+/* ---------- Estado y filtros ---------- */
+const DUI = { chip: 'all', q: '', sort: 'urgent', detailId: null };
+const DCHIPS = [
+  { k:'all', label:'Todas', fn: () => true },
+  { k:'open', label:'Sin saldar', dot:COLOR.o, fn: d => pendingOf(d) > 0 },
+  { k:'pendiente', label:'Pendientes', dot:COLOR.o, fn: d => debtStatus(d) === 'pendiente' },
+  { k:'parcial', label:'Pago parcial', dot:COLOR.b, fn: d => debtStatus(d) === 'parcial' },
+  { k:'vencida', label:'Vencidas', dot:COLOR.r, fn: d => debtStatus(d) === 'vencida' },
+  { k:'pagada', label:'Pagadas', dot:COLOR.g, fn: d => debtStatus(d) === 'pagada' },
+];
+function debtList() {
+  const chip = DCHIPS.find(c => c.k === DUI.chip) || DCHIPS[0];
+  const q = norm(DUI.q);
+  const list = [...Debts.items.values()].filter(d => chip.fn(d) && (!q || norm(d.name).includes(q) || norm(d.reason).includes(q)));
+  const rank = { vencida: 0, parcial: 1, pendiente: 1, pagada: 2 };
+  const cmp = {
+    urgent: (a, b) => rank[debtStatus(a)] - rank[debtStatus(b)] || (a.dueDate || '9999').localeCompare(b.dueDate || '9999') || pendingOf(b) - pendingOf(a),
+    pending: (a, b) => pendingOf(b) - pendingOf(a),
+    created: (a, b) => (b.createdOn || '').localeCompare(a.createdOn || '') || (b.createdAt || '').localeCompare(a.createdAt || ''),
+    name: () => 0,
+  }[DUI.sort] || (() => 0);
+  return list.sort((a, b) => cmp(a, b) || norm(a.name).localeCompare(norm(b.name), 'es'));
+}
+function debtTotals(list) {
+  const t = { n: list.length, pending: 0, paid: 0, original: 0, open: 0, overdue: 0, overdueAmt: 0, people: new Set() };
+  for (const d of list) {
+    const p = pendingOf(d);
+    t.pending += p; t.paid += Math.min(paidOf(d), d.original || 0); t.original += d.original || 0;
+    if (p > 0) { t.open++; t.people.add(norm(d.name)); }
+    if (debtStatus(d) === 'vencida') { t.overdue++; t.overdueAmt += p; }
+  }
+  return t;
+}
+
+/* ---------- Render ---------- */
+function renderDebtBadges() {
+  const b = $('#debtStoreBadge');
+  if (Debts.mode === 'db') { b.className = 'badge ok'; b.lastElementChild.textContent = 'Guardado en la nube · privado'; b.title = 'Solo tú puedes leer y modificar estos datos.'; }
+  else if (Debts.mode === 'local') { b.className = 'badge warn'; b.lastElementChild.textContent = 'Guardado solo en este navegador'; b.title = 'Descarga una copia de las deudas de vez en cuando para no perderlas.'; }
+  const n = Debts.mode === 'loading' ? 0 : debtTotals([...Debts.items.values()]).overdue;
+  const tn = $('#tabDebtN');
+  tn.hidden = !n; tn.textContent = n;
+  tn.title = n ? `${n} ${n === 1 ? 'deuda vencida' : 'deudas vencidas'}` : '';
+}
+function renderDebtKpis() {
+  const t = debtTotals([...Debts.items.values()]);
+  const pct = t.original ? Math.round(t.paid / t.original * 1000) / 10 : 0;
+  const people = t.people.size;
+  $('#debtKpis').innerHTML = `
+    <article class="kpi">
+      <div class="head"><span>Total pendiente de cobrar</span><span class="ico o">${ICON.clock}</span></div>
+      <div class="val c-o">${money(t.pending)}</div>
+      <div class="split" role="img" aria-label="Recuperado ${pct}% de lo prestado"><span class="w" style="width:${t.original ? t.paid / t.original * 100 : 0}%"></span><span class="p" style="width:${t.original ? t.pending / t.original * 100 : 0}%"></span></div>
+      <div class="sub">${t.open ? `En ${t.open} ${t.open === 1 ? 'deuda sin saldar' : 'deudas sin saldar'}` : 'Nadie te debe nada'}</div>
+    </article>
+    <article class="kpi">
+      <div class="head"><span>Personas que te deben</span><span class="ico b">${ICON.users}</span></div>
+      <div class="val">${people}</div>
+      <div class="sub">${t.n ? `${t.n} ${t.n === 1 ? 'deuda registrada' : 'deudas registradas'}` : 'Sin deudas todavía'}</div>
+    </article>
+    <article class="kpi">
+      <div class="head"><span>Total recuperado</span><span class="ico g">${ICON.wallet}</span></div>
+      <div class="val c-g">${money(t.paid)}</div>
+      <div class="sub">${t.original ? `${pct.toLocaleString('es-ES')} % de ${money(t.original)} prestados` : 'Sin pagos registrados'}</div>
+    </article>
+    <article class="kpi">
+      <div class="head"><span>Deudas vencidas</span><span class="ico r">${CAL}</span></div>
+      <div class="val ${t.overdue ? 'c-r' : ''}">${t.overdue}</div>
+      <div class="sub">${t.overdue ? `${money(t.overdueAmt)} fuera de plazo <button class="link-btn" type="button" data-dk="vencida">Ver</button>` : 'Ninguna fuera de plazo'}</div>
+    </article>`;
+}
+function renderDebtFilters() {
+  const all = [...Debts.items.values()];
+  $('#dChips').innerHTML = DCHIPS.map(c => `<button class="chip" type="button" data-dchip="${c.k}" aria-pressed="${DUI.chip === c.k}">${c.dot ? `<span class="d" style="background:${c.dot}"></span>` : ''}${c.label}<span class="n">${all.filter(c.fn).length}</span></button>`).join('');
+  $('#dSort').value = DUI.sort;
+  $('#dClear').hidden = !(DUI.chip !== 'all' || DUI.q);
+}
+const debtAvatar = (d, s) => `<span class="avatar t-${DST[s].t}" aria-hidden="true">${esc(initials(d.name))}</span>`;
+function debtCard(d) {
+  const s = debtStatus(d), st = DST[s], paid = paidOf(d), pend = pendingOf(d);
+  const pct = d.original ? Math.min(100, paid / d.original * 100) : 0;
+  const due = dueInfo(d);
+  return `<article class="acard" data-debt="${esc(d.id)}" style="--st:${COLOR[st.t]}" tabindex="0" aria-label="Deuda de ${esc(d.name)}">
+    <div class="ac-top">${debtAvatar(d, s)}
+      <div class="ac-id"><h3 title="${esc(d.name)}">${esc(d.name)}</h3><span class="dreason" title="${esc(d.reason)}">${d.reason ? esc(d.reason) : '<span class="muted">Sin motivo</span>'}</span></div>
+      <span class="pill-static t-${st.t}">${st.label}</span></div>
+    <div class="ac-money">
+      <div><span class="l">Original</span><b>${money(d.original)}</b></div>
+      <div><span class="l">Pagado</span><b class="${paid ? 'c-g' : 'muted'}">${money(paid)}</b></div>
+      <div class="tot"><span class="l">Pendiente</span><b class="${pend ? 'c-o' : 'c-g'}">${money(pend)}</b></div>
+    </div>
+    <div class="split" aria-hidden="true"><span class="w" style="width:${pct}%"></span><span class="p" style="width:${100 - pct}%"></span></div>
+    <ul class="ac-info">
+      <li>${ICON.clock}<span class="txt">Creada el ${fmtDate(d.createdOn)}</span></li>
+      <li>${CAL}<span class="txt ${due.cls}">${s === 'pagada' && d.paidAt ? `Saldada el ${fmtDate(d.paidAt)}` : esc(due.txt)}</span></li>
+      ${d.notes ? `<li>${ICON.note}<span class="txt" title="${esc(d.notes)}">${esc(d.notes)}</span></li>` : ''}
+    </ul>
+    <div class="ac-foot">
+      <button class="qbtn go" type="button" data-da="pay" data-id="${esc(d.id)}" ${pend ? '' : 'disabled'}>${small(ICON.euro)}Registrar pago</button>
+      <button class="qbtn" type="button" data-da="edit" data-id="${esc(d.id)}">${small(ICON.edit)}Editar</button>
+      <button class="qbtn" type="button" data-da="delete" data-id="${esc(d.id)}" aria-label="Eliminar la deuda de ${esc(d.name)}">${small(ICON.trash)}</button>
+      <span class="dcov">${Math.round(pct)} % cobrado</span>
+    </div>
+  </article>`;
+}
+function renderDebtList() {
+  const area = $('#debtArea');
+  if (Debts.mode === 'loading') return;
+  const total = Debts.items.size;
+  if (!total) {
+    area.innerHTML = `<div class="empty"><div class="badge-i">${ICON.wallet}</div><h3>Aún no hay deudas registradas</h3>
+      <p>Apunta quién te debe dinero, cuánto y por qué. Ve registrando los pagos y el pendiente se calcula solo.</p>
+      <div class="row"><button class="btn primary" type="button" data-da="add">${ICON.plus}Añadir la primera deuda</button></div></div>`;
+    $('#dResult').textContent = '0 deudas';
+    return;
+  }
+  const list = debtList(), t = debtTotals(list);
+  $('#dResult').textContent = list.length === total
+    ? `${total} ${total === 1 ? 'deuda' : 'deudas'} · ${money(t.pending)} pendiente`
+    : `${list.length} de ${total} deudas · ${money(t.pending)} pendiente en la selección`;
+  if (!list.length) {
+    area.innerHTML = `<div class="empty"><h3>Ninguna deuda coincide</h3><p>Prueba con otro nombre o quita el filtro de estado.</p><div class="row"><button class="btn" type="button" data-da="clear">Quitar filtros</button></div></div>`;
+    return;
+  }
+  area.innerHTML = `<div class="cards">${list.map(debtCard).join('')}</div>`;
+}
+let draf = 0;
+function debtChanged() {
+  if (draf) return;
+  draf = requestAnimationFrame(() => { draf = 0; renderDebtBadges(); renderDebtKpis(); renderDebtFilters(); renderDebtList(); if (DUI.detailId) renderDebtDetail(); });
+}
+
+/* ---------- Formulario de deuda ---------- */
+function openDebtForm(id, back) {
+  const editing = id ? Debts.items.get(id) : null;
+  const d = editing || { name: '', reason: '', original: 0, payments: [], createdOn: today(), dueDate: '', notes: '' };
+  const paid = paidOf(d);
+  const people = [...new Map([...Debts.items.values()].map(x => [norm(x.name), x.name])).values()].sort((a, b) => a.localeCompare(b, 'es'));
+  const root = openLayer(`<form class="modal" id="debtForm" novalidate aria-labelledby="dfT">
+    <div class="modal-h"><h2 id="dfT">${editing ? 'Editar deuda' : 'Añadir deuda'}</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b">
+      <div class="grid2">
+        <div class="fg full" data-f="name"><label for="df-name">Nombre de la persona</label><input class="field" id="df-name" maxlength="80" autocomplete="off" list="df-people" value="${esc(d.name)}" autofocus><datalist id="df-people">${people.map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist><span class="err"></span></div>
+        <div class="fg full" data-f="reason"><label for="df-reason">Motivo</label><input class="field" id="df-reason" maxlength="120" autocomplete="off" placeholder="Ej.: préstamo, cena, entradas…" value="${esc(d.reason)}"><span class="err"></span></div>
+        <div class="fg" data-f="original"><label for="df-original">Cantidad original</label><div class="money-in"><input class="field" id="df-original" inputmode="decimal" placeholder="0,00" value="${d.original ? moneyPlain(d.original) : ''}"><span>€</span></div><span class="err"></span></div>
+        <div class="fg" data-f="paid"><label for="df-paid">Cantidad pagada</label><div class="money-in"><input class="field" id="df-paid" inputmode="decimal" placeholder="0,00" value="${paid ? moneyPlain(paid) : ''}"><span>€</span></div><span class="hint">${editing ? 'Para un pago nuevo usa «Registrar pago». Si cambias esta cifra se guarda como ajuste.' : 'Lo que ya te haya devuelto, si es el caso.'}</span><span class="err"></span></div>
+        <div class="fg" data-f="createdOn"><label for="df-created">Fecha de creación</label><input class="field" type="date" id="df-created" value="${esc(d.createdOn || today())}"><span class="err"></span></div>
+        <div class="fg" data-f="dueDate"><label for="df-due">Fecha límite <span class="muted">(opcional)</span></label><input class="field" type="date" id="df-due" value="${esc(d.dueDate || '')}"><span class="err"></span></div>
+        <div class="fg full"><label for="df-notes">Notas</label><textarea class="field" id="df-notes" maxlength="2000" placeholder="Opcional">${esc(d.notes)}</textarea></div>
+      </div>
+      <div class="preview-total"><span>Pendiente de cobrar</span><b id="df-left">—</b></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-close>Cancelar</button><button class="btn primary" type="submit">${editing ? 'Guardar cambios' : 'Añadir deuda'}</button></div></form>`,
+    { onClose: back ? () => openDebtDetail(id) : null });
+  const form = $('#debtForm', root);
+  const setErr = (f, msg) => { const g = form.querySelector(`[data-f="${f}"]`); g.classList.toggle('bad', !!msg); g.querySelector('.err').textContent = msg || ''; };
+  const preview = () => {
+    const o = parseMoney($('#df-original').value), p = parseMoney($('#df-paid').value);
+    $('#df-left').textContent = o === null || p === null ? '—' : money(Math.max(0, o - p));
+  };
+  preview();
+  form.addEventListener('input', e => { if (e.target.matches('#df-original,#df-paid')) preview(); const g = e.target.closest('.fg.bad'); if (g) setErr(g.dataset.f, ''); });
+  form.addEventListener('click', e => { if (e.target.closest('[data-close]')) closeLayer(); });
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    $$('.fg.bad', form).forEach(g => setErr(g.dataset.f, ''));
+    const name = $('#df-name').value.trim().replace(/\s+/g, ' ');
+    const reason = $('#df-reason').value.trim();
+    const original = parseMoney($('#df-original').value), paidIn = parseMoney($('#df-paid').value);
+    const createdOn = DATE_RE.test($('#df-created').value) ? $('#df-created').value : today();
+    const dueDate = DATE_RE.test($('#df-due').value) ? $('#df-due').value : '';
+    let bad = null;
+    const fail = (f, m) => { setErr(f, m); bad ||= f; };
+    if (!name) fail('name', 'Escribe el nombre de la persona');
+    if (original === null) fail('original', 'Importe no válido. Ej.: 25,50');
+    else if (!original) fail('original', 'Indica cuánto te debe');
+    if (paidIn === null) fail('paid', 'Importe no válido. Ej.: 10,00');
+    else if (original && paidIn > original) fail('paid', 'No puede superar la cantidad original');
+    if (dueDate && dueDate < createdOn) fail('dueDate', 'No puede ser anterior a la fecha de creación');
+    if (bad) { form.querySelector(`[data-f="${bad}"] .field`).focus(); return; }
+    const now = new Date().toISOString();
+    const cur = editing ? Debts.items.get(editing.id) || editing : null;
+    const payments = cur ? [...(cur.payments || [])] : [];
+    const had = cur ? paidOf(cur) : 0;
+    if (!cur && paidIn > 0) payments.push({ id: rid('p'), date: createdOn, amount: paidIn, note: 'Pagado al crear la deuda', at: now });
+    if (cur && paidIn !== had) payments.push({ id: rid('p'), date: today(), amount: paidIn - had, note: 'Ajuste al editar la deuda', at: now, adjust: true });
+    const rec = settle({ ...(cur || {}), id: cur ? cur.id : rid('d'), name, reason, original, payments, createdOn, dueDate, notes: $('#df-notes').value.trim(), createdAt: cur?.createdAt || now, updatedAt: now });
+    const btn = form.querySelector('[type="submit"]'); btn.disabled = true;
+    try {
+      await Debts.put(rec);
+      closeLayer();
+      toast(cur ? 'Deuda actualizada' : pendingOf(rec) ? 'Deuda añadida' : 'Deuda añadida y marcada como pagada');
+    } catch (err) { btn.disabled = false; toast(errMsg(err), true); }
+  });
+}
+
+/* ---------- Registrar pago ---------- */
+function openPayment(id, back) {
+  const d = Debts.items.get(id); if (!d) return;
+  const pend = pendingOf(d);
+  const root = openLayer(`<form class="modal narrow" id="payForm" novalidate aria-labelledby="pyT">
+    <div class="modal-h"><h2 id="pyT">Registrar pago</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b">
+      <p style="margin:0;color:var(--fg-2)"><b style="color:var(--fg)">${esc(d.name)}</b> te debe <b class="c-o">${money(pend)}</b> de ${money(d.original)}${d.reason ? ` · ${esc(d.reason)}` : ''}.</p>
+      <div class="fg" data-f="amount"><label for="py-amount">Cantidad que te ha pagado</label><div class="money-in"><input class="field" id="py-amount" inputmode="decimal" placeholder="0,00" autocomplete="off" autofocus><span>€</span></div><span class="err"></span></div>
+      <div class="row"><button class="btn sm" type="button" data-fill="${pend}">Lo paga todo (${money(pend)})</button>${pend >= 2 ? `<button class="btn sm ghost" type="button" data-fill="${Math.round(pend / 2)}">La mitad (${money(Math.round(pend / 2))})</button>` : ''}</div>
+      <div class="grid2">
+        <div class="fg"><label for="py-date">Fecha del pago</label><input class="field" type="date" id="py-date" value="${today()}"></div>
+        <div class="fg"><label for="py-note">Nota <span class="muted">(opcional)</span></label><input class="field" id="py-note" maxlength="120" autocomplete="off" placeholder="Bizum, efectivo…"></div>
+      </div>
+      <div class="preview-total"><span>Quedará pendiente</span><b id="py-left">${money(pend)}</b></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-close>Cancelar</button><button class="btn primary" type="submit">Guardar pago</button></div></form>`,
+    { onClose: back ? () => openDebtDetail(id) : null });
+  const form = $('#payForm', root), g = form.querySelector('[data-f="amount"]');
+  const setErr = m => { g.classList.toggle('bad', !!m); g.querySelector('.err').textContent = m || ''; };
+  const preview = () => { const v = parseMoney($('#py-amount').value); $('#py-left').textContent = v === null ? '—' : money(Math.max(0, pend - v)); };
+  form.addEventListener('input', e => { if (e.target.id === 'py-amount') { setErr(''); preview(); } });
+  form.addEventListener('click', e => {
+    if (e.target.closest('[data-close]')) return closeLayer();
+    const f = e.target.closest('[data-fill]');
+    if (f) { $('#py-amount').value = moneyPlain(Number(f.dataset.fill)); setErr(''); preview(); $('#py-amount').focus(); }
+  });
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const cur = Debts.items.get(id); if (!cur) return closeLayer();
+    const left = pendingOf(cur), amount = parseMoney($('#py-amount').value);
+    if (amount === null) { setErr('Importe no válido. Ej.: 10,00'); return $('#py-amount').focus(); }
+    if (!amount) { setErr('Indica cuánto te ha pagado'); return $('#py-amount').focus(); }
+    if (amount > left) { setErr(`Solo quedan ${money(left)} pendientes`); return $('#py-amount').focus(); }
+    const now = new Date().toISOString();
+    const date = DATE_RE.test($('#py-date').value) ? $('#py-date').value : today();
+    const rec = settle({ ...cur, payments: [...(cur.payments || []), { id: rid('p'), date, amount, note: $('#py-note').value.trim(), at: now }], updatedAt: now });
+    const btn = form.querySelector('[type="submit"]'); btn.disabled = true;
+    try {
+      await Debts.put(rec);
+      closeLayer();
+      toast(pendingOf(rec) ? `Pago registrado · quedan ${money(pendingOf(rec))}` : 'Deuda saldada: marcada como pagada');
+    } catch (err) { btn.disabled = false; toast(errMsg(err), true); }
+  });
+}
+
+/* ---------- Ficha de la deuda ---------- */
+function openDebtDetail(id) {
+  if (!Debts.items.has(id)) return;
+  DUI.detailId = id;
+  const root = openLayer(`<aside class="drawer" id="debtDrawer" role="dialog" aria-modal="true" aria-labelledby="ddT"></aside>`, { drawer: true, onClose: () => { DUI.detailId = null; } });
+  renderDebtDetail();
+  $('#debtDrawer').addEventListener('click', e => {
+    const b = e.target.closest('[data-da],[data-close]'); if (!b) return;
+    if (b.hasAttribute('data-close')) return closeLayer();
+    const cur = DUI.detailId, act = b.dataset.da;
+    if (act === 'pay') openPayment(cur, true);
+    if (act === 'edit') openDebtForm(cur, true);
+    if (act === 'delete') confirmDebtDelete(cur, true);
+    if (act === 'del-pay') confirmPaymentDelete(cur, b.dataset.pid);
+  });
+  $('#debtDrawer [data-close]')?.focus();
+  return root;
+}
+function renderDebtDetail() {
+  const el = $('#debtDrawer'); if (!el) return;
+  const d = Debts.items.get(DUI.detailId);
+  if (!d) { closeLayer(); return; }
+  const s = debtStatus(d), st = DST[s], paid = paidOf(d), pend = pendingOf(d), due = dueInfo(d);
+  const pct = d.original ? Math.min(100, paid / d.original * 100) : 0;
+  const pays = [...(d.payments || [])].sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.at || '').localeCompare(a.at || ''));
+  const scroll = el.scrollTop;
+  el.innerHTML = `
+    <div class="modal-h"><h2 id="ddT">Ficha de deuda</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b">
+      <div class="d-hero">${debtAvatar(d, s)}<div style="min-width:0;display:flex;flex-direction:column;gap:6px">
+        <p class="nm">${esc(d.name)}</p>${d.reason ? `<span style="color:var(--fg-2)">${esc(d.reason)}</span>` : ''}
+        <div class="row" style="gap:6px"><span class="pill-static t-${st.t}">${st.label}</span></div></div></div>
+      <div class="figs">
+        <div class="fig total"><span class="l">Pendiente de cobrar</span><span class="v ${pend ? 'c-o' : 'c-g'}">${money(pend)}</span><div class="split" aria-hidden="true"><span class="w" style="width:${pct}%"></span><span class="p" style="width:${100 - pct}%"></span></div><span class="l">${Math.round(pct)} % cobrado</span></div>
+        <div class="fig"><span class="l">Cantidad original</span><span class="v">${money(d.original)}</span></div>
+        <div class="fig"><span class="l">Pagado</span><span class="v c-g">${money(paid)}</span></div>
+      </div>
+      <div class="d-sec"><h4>Fechas</h4>
+        <dl class="kv"><dt>Fecha de creación</dt><dd class="num">${fmtDate(d.createdOn)}</dd>
+        <dt>Fecha límite</dt><dd class="num ${due.cls}">${d.dueDate ? esc(due.txt) : '—'}</dd>
+        ${d.paidAt ? `<dt>Saldada</dt><dd class="num c-g">${fmtDate(d.paidAt)}</dd>` : ''}
+        <dt>Última modificación</dt><dd class="num">${d.updatedAt ? esc(fmtDateTime(d.updatedAt)) : '—'}</dd></dl>
+      </div>
+      <div class="d-sec"><h4>Pagos (${pays.length})</h4>
+        ${pays.length ? `<ul class="timeline">${pays.map(p => `<li><div class="pay-row"><div><b class="${p.amount < 0 ? 'c-r' : 'c-g'}">${p.amount < 0 ? '−' : '+'}${money(Math.abs(p.amount))}</b> <span class="when">${fmtDate(p.date)}</span>${p.note ? `<div class="chg">${esc(p.note)}</div>` : ''}</div>
+          <button class="icon-btn sm del" type="button" data-da="del-pay" data-pid="${esc(p.id)}" aria-label="Eliminar el pago de ${money(Math.abs(p.amount))} del ${fmtDate(p.date)}" title="Eliminar pago">${ICON.trash}</button></div></li>`).join('')}</ul>`
+          : '<p class="muted" style="margin:0">Todavía no hay pagos. Usa «Registrar pago» cada vez que te devuelva algo.</p>'}
+      </div>
+      <div class="d-sec"><h4>Notas</h4>${d.notes ? `<div class="note-box">${esc(d.notes)}</div>` : '<p class="muted" style="margin:0">Sin notas.</p>'}</div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-da="delete" style="color:var(--red)">${ICON.trash}Eliminar</button><button class="btn" type="button" data-da="edit">${ICON.edit}Editar</button><button class="btn primary" type="button" data-da="pay" ${pend ? '' : 'disabled'}>${ICON.euro}Registrar pago</button></div>`;
+  el.scrollTop = scroll;
+}
+
+/* ---------- Eliminar ---------- */
+function confirmDebtDelete(id, back) {
+  const d = Debts.items.get(id); if (!d) return;
+  const root = openLayer(`<div class="modal narrow" role="alertdialog" aria-labelledby="ddelT" aria-describedby="ddelD">
+    <div class="modal-h"><h2 id="ddelT">Eliminar deuda</h2></div>
+    <div class="modal-b"><p id="ddelD" style="margin:0">Vas a eliminar la deuda de <b>${esc(d.name)}</b>${d.reason ? ` (${esc(d.reason)})` : ''}: ${money(d.original)} originales, ${money(pendingOf(d))} pendientes, con todos sus pagos. Esta acción no se puede deshacer.</p></div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-c="no" autofocus>Cancelar</button><button class="btn danger" type="button" data-c="yes">Eliminar definitivamente</button></div></div>`,
+    { onClose: back ? () => openDebtDetail(id) : null });
+  root.addEventListener('click', async e => {
+    const c = e.target.closest('[data-c]')?.dataset.c; if (!c) return;
+    if (c === 'no') return closeLayer();
+    e.target.disabled = true;
+    try { await Debts.remove(id); closeLayer(); toast('Deuda eliminada'); }
+    catch (err) { e.target.disabled = false; toast(errMsg(err), true); }
+  });
+}
+function confirmPaymentDelete(id, pid) {
+  const d = Debts.items.get(id); const p = d && (d.payments || []).find(x => x.id === pid); if (!p) return;
+  const root = openLayer(`<div class="modal narrow" role="alertdialog" aria-labelledby="pdelT">
+    <div class="modal-h"><h2 id="pdelT">Eliminar pago</h2></div>
+    <div class="modal-b"><p style="margin:0">Se quitará el ${p.adjust ? 'ajuste' : 'pago'} de <b>${money(Math.abs(p.amount))}</b> del ${fmtDate(p.date)} y el pendiente de ${esc(d.name)} se recalculará.</p></div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-c="no" autofocus>Cancelar</button><button class="btn danger" type="button" data-c="yes">Eliminar pago</button></div></div>`,
+    { onClose: () => openDebtDetail(id) });
+  root.addEventListener('click', async e => {
+    const c = e.target.closest('[data-c]')?.dataset.c; if (!c) return;
+    if (c === 'no') return closeLayer();
+    const cur = Debts.items.get(id); if (!cur) return closeLayer();
+    e.target.disabled = true;
+    try {
+      await Debts.put(settle({ ...cur, payments: (cur.payments || []).filter(x => x.id !== pid), updatedAt: new Date().toISOString() }));
+      closeLayer(); toast('Pago eliminado');
+    } catch (err) { e.target.disabled = false; toast(errMsg(err), true); }
+  });
+}
+
+/* ---------- Copia de las deudas (aparte de la copia de VINTED) ---------- */
+function cleanDebt(x, now) {
+  const pays = (Array.isArray(x.payments) ? x.payments : [])
+    .filter(p => p && Number.isSafeInteger(p.amount) && p.amount !== 0 && Math.abs(p.amount) <= MAX_CENTS).slice(0, 1000)
+    .map(p => ({ id: ID_RE.test(String(p.id || '')) ? p.id : rid('p'), date: DATE_RE.test(p.date) ? p.date : today(), amount: p.amount, note: txt(p.note, 120), at: txt(p.at, 40) || now, ...(p.adjust ? { adjust: true } : {}) }));
+  return settle({
+    id: x.id, name: txt(x.name, 80).trim().replace(/\s+/g, ' '), reason: txt(x.reason, 120).trim(), original: cents(x.original), payments: pays,
+    createdOn: DATE_RE.test(x.createdOn) ? x.createdOn : today(), dueDate: DATE_RE.test(x.dueDate) ? x.dueDate : '',
+    notes: txt(x.notes, 2000), paidAt: DATE_RE.test(x.paidAt) ? x.paidAt : '',
+    createdAt: txt(x.createdAt, 40) || now, updatedAt: txt(x.updatedAt, 40) || now,
+  });
+}
+function openDebtBackup() {
+  const n = Debts.items.size;
+  const root = openLayer(`<div class="modal narrow" role="dialog" aria-labelledby="dbkT">
+    <div class="modal-h"><h2 id="dbkT">Copia de las deudas</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b">
+      <p style="margin:0;color:var(--fg-2)">Descarga todas las deudas con sus pagos en un archivo, o restáuralas desde una copia anterior. Las cuentas de VINTED tienen su propia copia en su pestaña.</p>
+      <div class="alert o">${ICON.shield}<p>La copia incluye nombres, importes y notas sin cifrar. Guárdala en un lugar seguro.</p></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn" type="button" data-bk="restore">Restaurar desde archivo</button>
+      <button class="btn primary" type="button" data-bk="save" ${n ? '' : 'disabled'}>Descargar copia</button>
+      <input type="file" id="dbkFile" accept=".json,application/json" hidden>
+    </div></div>`);
+  root.addEventListener('click', e => {
+    if (e.target.closest('[data-close]')) return closeLayer();
+    const b = e.target.closest('[data-bk]'); if (!b) return;
+    if (b.dataset.bk === 'restore') $('#dbkFile', root).click();
+    if (b.dataset.bk === 'save') saveDebtBackup(b);
+  });
+  $('#dbkFile', root).addEventListener('change', e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) readDebtBackup(f); });
+}
+async function saveDebtBackup(btn) {
+  btn.disabled = true;
+  const text = JSON.stringify({ app: 'vinted-control-debts', format: 1, exportedAt: new Date().toISOString(), debts: [...Debts.items.values()] }, null, 2);
+  const filename = `copia-deudas-${today()}.json`;
+  let dl = null;
+  try { dl = window.claude && await window.claude.use('downloads'); } catch { dl = null; }
+  if (dl) {
+    try { await dl.save({ filename, data: text }); btn.disabled = false; toast('Copia guardada'); return; }
+    catch (e) {
+      if (e && e.code === 'declined') { btn.disabled = false; return; }
+      if (e && e.code === 'rate_limited') { btn.disabled = false; toast('Ya hay una descarga pendiente de confirmar', true); return; }
+    }
+  } else {
+    try {
+      const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+      const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      btn.disabled = false; toast('Copia descargada'); return;
+    } catch {}
+  }
+  const root = openLayer(`<div class="modal"><div class="modal-h"><h2>Copia de las deudas</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b"><p style="margin:0;color:var(--fg-2)">La descarga directa no está disponible aquí. Copia el contenido y guárdalo en un archivo <span class="mono">.json</span>.</p><textarea class="field mono" id="dbkOut" rows="10" readonly></textarea></div>
+    <div class="modal-f"><button class="btn primary" type="button" id="dbkCopy">${ICON.copy}Copiar</button></div></div>`);
+  $('#dbkOut', root).value = text;
+  root.addEventListener('click', async e => {
+    if (e.target.closest('[data-close]')) return closeLayer();
+    if (e.target.closest('#dbkCopy')) {
+      try { await navigator.clipboard.writeText($('#dbkOut').value); toast('Copia copiada'); }
+      catch { $('#dbkOut').select(); toast('Texto seleccionado: cópialo con Ctrl+C'); }
+    }
+  });
+}
+function readDebtBackup(file) {
+  if (file.size > 20 * 1024 * 1024) { toast('El archivo es demasiado grande (máx. 20 MB)', true); return; }
+  const rd = new FileReader();
+  rd.onload = () => {
+    let data = null;
+    try { data = JSON.parse(String(rd.result || '')); } catch { data = null; }
+    if (!data || data.app !== 'vinted-control-debts' || !Array.isArray(data.debts)) { toast('Ese archivo no es una copia de las deudas', true); return; }
+    const now = new Date().toISOString();
+    const valid = data.debts.filter(x => x && typeof x === 'object' && ID_RE.test(String(x.id || '')) && typeof x.name === 'string' && x.name.trim() && cents(x.original) > 0).map(x => cleanDebt(x, now));
+    const skipped = data.debts.length - valid.length;
+    const root = openLayer(`<div class="modal narrow" role="alertdialog" aria-labelledby="drsT">
+      <div class="modal-h"><h2 id="drsT">Restaurar deudas</h2></div>
+      <div class="modal-b">
+        <p style="margin:0">Se restaurarán <b>${valid.length}</b> ${valid.length === 1 ? 'deuda' : 'deudas'} de la copia del ${esc(fmtDateTime(data.exportedAt))}. Las que tengan el mismo identificador se sustituyen y las demás no se borran. Las cuentas de VINTED no se tocan.</p>
+        ${skipped ? `<div class="alert o"><p>${skipped} ${skipped === 1 ? 'registro no es válido y se omitirá' : 'registros no son válidos y se omitirán'}.</p></div>` : ''}
+      </div>
+      <div class="modal-f"><button class="btn ghost" type="button" data-c="no">Cancelar</button><button class="btn primary" type="button" data-c="yes" ${valid.length ? '' : 'disabled'}>Restaurar</button></div></div>`);
+    root.addEventListener('click', async e => {
+      const c = e.target.closest('[data-c]'); if (!c) return;
+      if (c.dataset.c === 'no') return closeLayer();
+      c.disabled = true;
+      let done = 0;
+      try {
+        for (const x of valid) { await Debts.put(x); done++; c.textContent = `Restaurando… ${done}/${valid.length}`; }
+        closeLayer(); toast(`${done} ${done === 1 ? 'deuda restaurada' : 'deudas restauradas'}`);
+      } catch (err) { c.disabled = false; c.textContent = 'Restaurar'; toast(`Se restauraron ${done} de ${valid.length}. ${errMsg(err)}`, true); }
+    });
+  };
+  rd.onerror = () => toast('No se pudo leer el archivo', true);
+  rd.readAsText(file, 'utf-8');
+}
+
+/* ---------- Eventos de DEUDAS ---------- */
+function clearDebtFilters() { DUI.chip = 'all'; DUI.q = ''; $('#dq').value = ''; debtChanged(); }
+$('#btnDebtAdd').addEventListener('click', () => openDebtForm());
+$('#btnDebtBackup').addEventListener('click', openDebtBackup);
+let dqTimer;
+$('#dq').addEventListener('input', e => { clearTimeout(dqTimer); dqTimer = setTimeout(() => { DUI.q = e.target.value.trim(); renderDebtFilters(); renderDebtList(); }, 120); });
+$('#dSort').addEventListener('change', e => { DUI.sort = e.target.value; debtChanged(); });
+$('#dClear').addEventListener('click', clearDebtFilters);
+$('#dChips').addEventListener('click', e => { const c = e.target.closest('[data-dchip]'); if (c) { DUI.chip = c.dataset.dchip; debtChanged(); } });
+$('#debtKpis').addEventListener('click', e => { const k = e.target.closest('[data-dk]'); if (k) { DUI.chip = k.dataset.dk; debtChanged(); $('#dChips').scrollIntoView({ behavior: 'smooth', block: 'center' }); } });
+$('#debtArea').addEventListener('click', e => {
+  const b = e.target.closest('[data-da]');
+  if (b) {
+    const act = b.dataset.da, id = b.dataset.id;
+    if (act === 'add') openDebtForm();
+    else if (act === 'clear') clearDebtFilters();
+    else if (act === 'pay') openPayment(id);
+    else if (act === 'edit') openDebtForm(id);
+    else if (act === 'delete') confirmDebtDelete(id);
+    return;
+  }
+  if (e.target.closest('select,button,a,input')) return;
+  const card = e.target.closest('[data-debt]'); if (card) openDebtDetail(card.dataset.debt);
+});
+$('#debtArea').addEventListener('keydown', e => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-debt]')) { e.preventDefault(); openDebtDetail(e.target.dataset.debt); }
+});
+renderDebtKpis(); renderDebtFilters();
+
 renderKpis(); renderFilters();
-Store.init();
+Store.init().finally(() => Debts.init());
 })();
 </script>
 
