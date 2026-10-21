@@ -1,9 +1,9 @@
-// Conexión con tu proyecto de Supabase.
-// Estos dos datos son PÚBLICOS: sirven para encontrar tu proyecto, no para abrirlo.
-// Tus datos los protegen tu correo y contraseña de inicio de sesión y las reglas de la tabla.
-// NUNCA pongas aquí la clave «secret» ni la «service_role».
-// Si los dejas vacíos, la web funciona como antes: guardando solo en cada navegador.
-window.CONTROLVINTED_SUPABASE = {
-  url: '',      // Project URL, por ejemplo: https://abcdefghijkl.supabase.co
-  anonKey: '',  // Publishable key (empieza por sb_publishable_) o la clave «anon public»
+// Dónde se guardan los datos sincronizados: rama «datos» de este mismo repositorio.
+// No hay nada secreto aquí: los datos van cifrados con tu clave de acceso y el token de GitHub también.
+// Si borras este bloque, la web vuelve a guardar solo en cada navegador.
+window.CONTROLVINTED_SYNC = {
+  owner: 'whitzfn-netizen',
+  repo: 'CONTROLVINTED',
+  branch: 'datos',
+  path: 'datos.json',
 };

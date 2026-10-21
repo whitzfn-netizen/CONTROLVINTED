@@ -616,7 +616,7 @@ const Store = {
   async init() {
     let db = null;
     try { if (window.claude && typeof window.claude.use === 'function') db = await window.claude.use('db'); } catch { db = null; }
-    if (!db) db = await Cloud.connect();
+    if (!db) db = await Sync.connect();
     if (db && await this.tryDb(db)) return;
     this.useLocal();
   },
@@ -719,200 +719,163 @@ const Store = {
   },
 };
 
-/* ---------- Sincronización entre dispositivos (Supabase) ----------
-   Solo se activa si config.js trae la URL y la clave pública del proyecto. Ofrece a Store y a DEUDAS
-   la misma interfaz que la base de datos del artefacto (collection/doc, get/set/delete, onSnapshot),
-   así el resto de la app no cambia. Cada fila de la tabla «items» pertenece a un usuario y las reglas
-   RLS de Supabase impiden que nadie más la lea o la modifique. */
-const SB_LIB = { src: 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.89.0/dist/umd/supabase.js', integrity: 'sha384-sddcMIX7Ar6auuLM3TihDPYO6uOeMYsjtmZKfi8V83eeqdFWdnpAtk90odEwbXjh' };
-const SB_TABLE = 'items';
-const SB_LIVE = ['accounts', 'settings', 'debts'];
-const SB_LOCAL = { 'vinted-control.v1': ['accounts', 'history', 'settings'], 'vinted-control.debts.v1': ['debts'] };
-const Cloud = {
-  client: null, user: null, db: null,
-  cache: new Map(), loaded: new Map(), colSubs: new Map(), docSubs: new Map(), timers: new Map(),
+/* ---------- Sincronización entre dispositivos (GitHub, cifrada) ----------
+   Solo se activa si config.js indica el repositorio. Todos los datos (cuentas, historial, ajustes y deudas)
+   se guardan en un único archivo de la rama «datos», cifrado con AES-GCM y una clave derivada (PBKDF2) de la
+   clave de acceso del dueño: el repositorio es público pero el contenido es ilegible sin esa clave.
+   El token de GitHub que permite escribir va dentro del archivo, también cifrado, así los demás
+   dispositivos solo necesitan la clave. Ofrece a Store y a DEUDAS la misma interfaz que la base de
+   datos del artefacto (collection/doc, get/set/delete, onSnapshot), así el resto de la app no cambia. */
+const SYNC_CRED = 'controlvinted.sync', SYNC_CACHE = 'controlvinted.sync.cache', SYNC_OFF = 'controlvinted.sync.off';
+const SYNC_ITER = 310000, SYNC_TOMB_MS = 90 * 86400000;
+const SYNC_LOCAL = { 'vinted-control.v1': ['accounts', 'history', 'settings'], 'vinted-control.debts.v1': ['debts'] };
+const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new';
+const Sync = {
+  cfg: null, cred: null, aes: null, docs: {}, sha: null, etag: null, ver: 0, saved: 0, saving: false, again: false, timer: 0,
+  colSubs: new Map(), docSubs: new Map(), emitTimers: new Map(), lastSave: null, fileMeta: null, asking: false,
   config() {
-    const c = window.CONTROLVINTED_SUPABASE;
-    if (c && this.isSecret(String(c.anonKey || ''))) { toast('config.js tiene una clave secreta de Supabase. Cámbiala por la clave pública (publishable o anon).', true); return null; }
-    return c && /^https:\/\/[^\s/]+$/.test(String(c.url || '').replace(/\/+$/, '')) && String(c.anonKey || '').length > 20 ? { url: String(c.url).replace(/\/+$/, ''), key: String(c.anonKey) } : null;
+    const c = window.CONTROLVINTED_SYNC;
+    if (!c || !/^[\w.-]+$/.test(String(c.owner || '')) || !/^[\w.-]+$/.test(String(c.repo || ''))) return null;
+    return { owner: c.owner, repo: c.repo, branch: c.branch || 'datos', path: c.path || 'datos.json',
+      api: String(c.api || 'https://api.github.com').replace(/\/+$/, ''), poll: Number(c.poll) || 15000 };
   },
-  isSecret(k) {
-    if (k.startsWith('sb_secret_')) return true;
-    try { return JSON.parse(atob(k.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).role === 'service_role'; } catch { return false; }
+  repoPath(p = '') { return `/repos/${this.cfg.owner}/${this.cfg.repo}${p}`; },
+  gh(path, { method = 'GET', headers = {}, body, auth = true } = {}) {
+    const h = { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...headers };
+    if (auth && this.cred && this.cred.token) h.Authorization = 'Bearer ' + this.cred.token;
+    return fetch(this.cfg.api + path, { method, headers: h, body, cache: 'no-store' });
   },
-  loadLib() {
-    if (window.supabase && window.supabase.createClient) return Promise.resolve(true);
-    return new Promise(resolve => {
-      const s = Object.assign(document.createElement('script'), { src: SB_LIB.src, integrity: SB_LIB.integrity, crossOrigin: 'anonymous' });
-      s.onload = () => resolve(!!(window.supabase && window.supabase.createClient));
-      s.onerror = () => resolve(false);
-      document.head.appendChild(s);
-    });
+  /* --- cifrado --- */
+  async deriveRaw(pass, salt, iter) {
+    const base = await crypto.subtle.importKey('raw', enc.encode(pass), 'PBKDF2', false, ['deriveBits']);
+    return new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: iter, hash: 'SHA-256' }, base, 256));
   },
-  /** Devuelve la interfaz de datos en la nube, o null para seguir guardando solo en este navegador. */
-  async connect() {
-    const cfg = this.config(); if (!cfg) return null;
-    for (;;) {
-      if (!await this.loadLib()) { if (await this.offline('No se pudo cargar el conector de la nube.')) continue; return null; }
-      try {
-        this.client ||= window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'controlvinted-auth' } });
-        const { data } = await this.client.auth.getSession();
-        this.user = data && data.session ? data.session.user : null;
-        if (!this.user) { this.user = await this.login(); if (!this.user) return null; }
-        for (const c of SB_LIVE) await this.load(c);
-        break;
-      } catch (e) {
-        if (await this.offline('No se pudo conectar con la nube. Comprueba la conexión a internet.')) continue;
-        return null;
+  importAes(raw) { return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']); },
+  async seal(obj, key = this.aes) {
+    let bytes = enc.encode(JSON.stringify(obj)), z = false;
+    if (window.CompressionStream) { bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer()); z = true; }
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    return { iv: b64(iv), ct: b64(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes)), z };
+  },
+  async unseal(box, key = this.aes) {
+    let bytes = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(box.iv) }, key, unb64(box.ct)));
+    if (box.z) bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+    return JSON.parse(dec.decode(bytes));
+  },
+  /* --- archivo remoto --- */
+  /** 'same' si no ha cambiado, 'missing' si no existe, o { sha, file }. */
+  async pull({ force = false, auth = true } = {}) {
+    const headers = { Accept: 'application/vnd.github.object+json' };
+    if (this.etag && !force) headers['If-None-Match'] = this.etag;
+    const r = await this.gh(this.repoPath(`/contents/${encodeURIComponent(this.cfg.path)}?ref=${encodeURIComponent(this.cfg.branch)}`), { headers, auth });
+    if (r.status === 304) return 'same';
+    if (r.status === 404) return 'missing';
+    if (r.status === 401) throw { code: 'token' };
+    if (!r.ok) throw { code: 'net', status: r.status };
+    const j = await r.json();
+    const etag = r.headers.get('ETag');
+    if (j.sha === this.sha && !force) { this.etag = etag; return 'same'; }
+    let content = j.encoding === 'base64' && j.content ? j.content : '';
+    if (!content) {
+      const br = await this.gh(this.repoPath(`/git/blobs/${j.sha}`), { auth });
+      if (!br.ok) throw { code: br.status === 401 ? 'token' : 'net', status: br.status };
+      content = (await br.json()).content;
+    }
+    const file = JSON.parse(atob(content.replace(/\s/g, '')));
+    if (!file || file.app !== 'controlvinted-sync' || !file.tok || !file.data) throw { code: 'format' };
+    return { sha: j.sha, etag, file };
+  },
+  async fileBody() {
+    const t = Date.now();
+    for (const [k, v] of Object.entries(this.docs)) if (v.x && t - v.t > SYNC_TOMB_MS) delete this.docs[k];
+    return { app: 'controlvinted-sync', v: 1, salt: this.cred.salt, iter: this.cred.iter, tok: await this.seal(this.cred.token), data: await this.seal({ docs: this.docs }), at: new Date().toISOString() };
+  },
+  /** Mezcla documento a documento: gana la versión con fecha más reciente (los borrados también tienen fecha). */
+  async absorb(res) {
+    const remote = (await this.unseal(res.file.data)).docs || {};
+    const cols = new Set();
+    for (const [k, rv] of Object.entries(remote)) {
+      const lv = this.docs[k];
+      if (!lv || rv.t > lv.t) { this.docs[k] = rv; cols.add(k.slice(0, k.indexOf('/'))); }
+    }
+    const ahead = Object.entries(this.docs).some(([k, lv]) => !remote[k] || lv.t > remote[k].t);
+    this.sha = res.sha; this.etag = res.etag || null;
+    this.persist();
+    cols.forEach(c => this.emit(c));
+    return ahead;
+  },
+  /** Tras mezclar lo de GitHub: si aquí hay algo más nuevo, queda pendiente de subir; si no, todo está guardado. */
+  settle(ahead) { if (ahead) { if (this.saved === this.ver) this.ver++; } else if (!this.saving) this.saved = this.ver; this.persist(); },
+  async push() {
+    if (this.saving) { this.again = true; return; }
+    if (this.saved === this.ver) return;
+    this.saving = true;
+    const v0 = this.ver;
+    try {
+      for (let tries = 0; ; tries++) {
+        const body = { message: `Datos cifrados · ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`, branch: this.cfg.branch, content: btoa(JSON.stringify(await this.fileBody())) };
+        if (this.sha) body.sha = this.sha;
+        const r = await this.gh(this.repoPath(`/contents/${encodeURIComponent(this.cfg.path)}`), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (r.ok) {
+          const j = await r.json();
+          this.sha = j.content.sha; this.etag = null; this.lastSave = new Date();
+          if (this.ver === v0) this.saved = v0;
+          this.persist(); this.failed = false;
+          break;
+        }
+        if ((r.status === 409 || r.status === 422) && tries < 4) { const res = await this.pull({ force: true }); if (res && res.file) await this.absorb(res); else if (res === 'missing') this.sha = null; continue; }
+        if (r.status === 401 || r.status === 403 || r.status === 404) throw { code: 'token' };
+        throw { code: 'net', status: r.status };
       }
-    }
-    this.listen();
-    await this.migrate();
-    this.db = this.api();
-    this.client.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_OUT') location.reload(); });
-    ['#storeBadge', '#debtStoreBadge'].forEach(sel => { const b = $(sel); if (!b) return; b.style.cursor = 'pointer'; b.addEventListener('click', () => this.openAccount()); });
-    return this.db;
-  },
-  login() {
-    return new Promise(resolve => {
-      let done = false;
-      const show = (msg = '') => {
-        const root = openLayer(`<form class="modal narrow" id="sbLogin" novalidate aria-labelledby="sbT">
-          <div class="modal-h"><h2 id="sbT">Entrar</h2></div>
-          <div class="modal-b">
-            <p style="margin:0;color:var(--fg-2)">Inicia sesión para ver tus cuentas y deudas sincronizadas en todos tus dispositivos. Solo hay que hacerlo una vez en cada uno.</p>
-            <div class="fg"><label for="sb-email">Correo</label><input class="field" id="sb-email" type="email" autocomplete="username" autofocus></div>
-            <div class="fg"><label for="sb-pass">Contraseña</label><div class="pw"><input class="field" id="sb-pass" type="password" autocomplete="current-password"><button type="button" data-pwtoggle aria-label="Mostrar u ocultar la contraseña">${ICON.eye}</button></div></div>
-            <div class="alert r" id="sbErr" ${msg ? '' : 'hidden'}><p>${esc(msg)}</p></div>
-            <button class="link-btn" type="button" data-sb="local" style="align-self:flex-start">Usar sin sincronizar (solo este navegador)</button>
-          </div>
-          <div class="modal-f"><button class="btn primary" type="submit">Entrar</button></div></form>`, { onClose: () => { if (!done) setTimeout(() => show()); } });
-        const form = $('#sbLogin', root);
-        form.addEventListener('click', e => {
-          const t = e.target.closest('[data-pwtoggle]');
-          if (t) { const i = $('#sb-pass'); i.type = i.type === 'password' ? 'text' : 'password'; t.innerHTML = i.type === 'password' ? ICON.eye : ICON.eyeOff; }
-          if (e.target.closest('[data-sb="local"]')) { done = true; closeLayer(); resolve(null); }
-        });
-        form.addEventListener('submit', async e => {
-          e.preventDefault();
-          const email = $('#sb-email').value.trim(), password = $('#sb-pass').value;
-          const err = m => { const a = $('#sbErr'); a.hidden = false; a.firstElementChild.textContent = m; };
-          if (!email || !password) return err('Escribe tu correo y tu contraseña.');
-          const btn = form.querySelector('[type="submit"]'); btn.disabled = true; btn.textContent = 'Entrando…';
-          try {
-            const { data, error } = await this.client.auth.signInWithPassword({ email, password });
-            if (error) throw error;
-            done = true; closeLayer(); resolve(data.user);
-          } catch (e2) {
-            btn.disabled = false; btn.textContent = 'Entrar';
-            err(e2 && e2.status === 400 ? 'Correo o contraseña incorrectos.' : 'No se pudo conectar. Comprueba la conexión e inténtalo de nuevo.');
-          }
-        });
-      };
-      show();
-    });
-  },
-  /** Error de conexión: true = reintentar, false = seguir solo en este navegador. */
-  offline(msg) {
-    return new Promise(resolve => {
-      let done = false;
-      const root = openLayer(`<div class="modal narrow" role="alertdialog" aria-labelledby="sbOffT">
-        <div class="modal-h"><h2 id="sbOffT">Sin conexión con la nube</h2></div>
-        <div class="modal-b"><p style="margin:0">${esc(msg)}</p><p class="muted" style="margin:0;font-size:12.5px">Si sigues sin sincronizar, lo que cambies ahora se queda solo en este navegador.</p></div>
-        <div class="modal-f"><button class="btn ghost" type="button" data-c="local">Seguir sin sincronizar</button><button class="btn primary" type="button" data-c="retry" autofocus>Reintentar</button></div></div>`,
-        { onClose: () => { if (!done) { done = true; resolve(true); } } });
-      root.addEventListener('click', e => { const c = e.target.closest('[data-c]'); if (!c) return; done = true; closeLayer(); resolve(c.dataset.c === 'retry'); });
-    });
-  },
-  openAccount() {
-    const root = openLayer(`<div class="modal narrow" role="dialog" aria-labelledby="sbAccT">
-      <div class="modal-h"><h2 id="sbAccT">Sincronización</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
-      <div class="modal-b"><div class="alert g">${ICON.shield}<p>Sincronizado con la nube como <b>${esc(this.user.email || '')}</b>. Los cambios aparecen solos en tus otros dispositivos.</p></div></div>
-      <div class="modal-f"><button class="btn ghost" type="button" data-c="out">Cerrar sesión en este dispositivo</button><button class="btn primary" type="button" data-close>Listo</button></div></div>`);
-    root.addEventListener('click', async e => {
-      if (e.target.closest('[data-close]')) return closeLayer();
-      if (e.target.closest('[data-c="out"]')) { e.target.disabled = true; await this.client.auth.signOut(); location.reload(); }
-    });
-  },
-  async fetchAll(col) {
-    const rows = [];
-    for (let from = 0; ; from += 1000) {
-      const { data, error } = await this.client.from(SB_TABLE).select('id,data').eq('collection', col).order('id').range(from, from + 999);
-      if (error) throw error;
-      rows.push(...data);
-      if (data.length < 1000) return rows;
+    } catch (e) {
+      if (e && e.code === 'token' && this.connected) this.tokenProblem();
+      else if (!this.failed) { this.failed = true; if (this.connected) toast('No se pudo guardar en GitHub. Se reintentará solo; no cierres la página todavía.', true); }
+    } finally {
+      this.saving = false;
+      if (this.again || this.saved !== this.ver) { this.again = false; if (!this.failed) this.schedule(); }
     }
   },
-  async load(col) {
-    const rows = await this.fetchAll(col);
-    this.cache.set(col, new Map(rows.map(r => [r.id, r.data])));
-    this.loaded.set(col, true);
-    this.emit(col);
+  schedule(ms = 1200) { clearTimeout(this.timer); this.timer = setTimeout(() => this.push(), ms); },
+  async tick() {
+    if (document.visibilityState !== 'visible' || this.saving || this.asking) return;
+    try {
+      const res = await this.pull();
+      if (res && res.file) this.settle(await this.absorb(res));
+      else if (res === 'missing' && Object.keys(this.docs).length) { this.sha = null; this.ver++; }
+      if (this.saved !== this.ver) this.push();
+    } catch (e) { if (e && e.code === 'token') this.tokenProblem(); }
   },
-  listen() {
-    let joined = false;
-    const onChange = p => {
-      const row = p.eventType === 'DELETE' ? p.old : p.new;
-      if (!row || row.user_id !== this.user.id || !this.cache.has(row.collection)) return;
-      if (p.eventType === 'DELETE') this.cache.get(row.collection).delete(row.id);
-      else this.cache.get(row.collection).set(row.id, row.data);
-      this.emit(row.collection);
-    };
-    this.client.channel('items-' + this.user.id)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: SB_TABLE, filter: `user_id=eq.${this.user.id}` }, onChange)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: SB_TABLE, filter: `user_id=eq.${this.user.id}` }, onChange)
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: SB_TABLE }, onChange) // los borrados no admiten filtro
-      .subscribe(st => {
-        if (st !== 'SUBSCRIBED') return;
-        if (joined) this.refresh(); // al reconectar, recupera lo que haya cambiado mientras tanto
-        joined = true;
-      });
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') this.refresh(); });
-    window.addEventListener('online', () => this.refresh());
+  persist() {
+    try { localStorage.setItem(SYNC_CACHE, JSON.stringify({ owner: this.cfg.owner, repo: this.cfg.repo, docs: this.docs, sha: this.sha, pending: this.saved !== this.ver })); } catch {}
   },
-  refresh() {
-    clearTimeout(this.refreshTimer);
-    this.refreshTimer = setTimeout(() => SB_LIVE.forEach(c => this.load(c).catch(() => {})), 300);
-  },
+  saveCred() { try { localStorage.setItem(SYNC_CRED, JSON.stringify(this.cred)); } catch {} },
+  /* --- interfaz para Store y DEUDAS --- */
+  live(col) { const out = new Map(); for (const [k, v] of Object.entries(this.docs)) if (!v.x && k.startsWith(col + '/')) out.set(k.slice(col.length + 1), v.d); return out; },
   emit(col) {
-    clearTimeout(this.timers.get(col));
-    this.timers.set(col, setTimeout(() => {
-      const m = this.cache.get(col) || new Map();
+    clearTimeout(this.emitTimers.get(col));
+    this.emitTimers.set(col, setTimeout(() => {
+      const m = this.live(col);
       const snap = { docs: [...m].map(([id, data]) => ({ id, data: () => data })) };
       (this.colSubs.get(col) || new Set()).forEach(s => s(snap));
       for (const [path, set] of this.docSubs) {
-        const [c, id] = path.split('/'); if (c !== col) continue;
-        const data = m.get(id);
+        if (!path.startsWith(col + '/')) continue;
+        const id = path.slice(col.length + 1), data = m.get(id);
         set.forEach(s => s({ id, exists: data !== undefined, data: () => data }));
       }
-    }, 30));
+    }, 20));
   },
-  async put(col, id, data) {
-    const { error } = await this.client.from(SB_TABLE).upsert({ user_id: this.user.id, collection: col, id, data, updated_at: new Date().toISOString() }, { onConflict: 'user_id,collection,id' });
-    if (error) throw error;
-    if (this.cache.has(col)) { this.cache.get(col).set(id, data); this.emit(col); }
-  },
-  async del(col, id) {
-    const { error } = await this.client.from(SB_TABLE).delete().eq('collection', col).eq('id', id);
-    if (error) throw error;
-    if (this.cache.has(col)) { this.cache.get(col).delete(id); this.emit(col); }
-  },
-  async get(col, id) {
-    const { data, error } = await this.client.from(SB_TABLE).select('data').eq('collection', col).eq('id', id).maybeSingle();
-    if (error) throw error;
-    return { id, exists: !!data, data: () => data ? data.data : undefined };
+  write(col, id, data) {
+    const k = col + '/' + id, prev = this.docs[k];
+    const t = Math.max(Date.now(), prev ? prev.t + 1 : 0);
+    this.docs[k] = data === null ? { t, x: 1 } : { t, d: JSON.parse(JSON.stringify(data)) };
+    this.ver++; this.persist(); this.emit(col); this.schedule();
   },
   api() {
-    const sub = (map, key, fn, col) => {
-      if (!map.has(key)) map.set(key, new Set());
-      map.get(key).add(fn);
-      if (this.loaded.get(col)) this.emit(col); else this.load(col).catch(() => {});
-      return () => map.get(key).delete(fn);
-    };
+    const sub = (map, key, fn, col) => { if (!map.has(key)) map.set(key, new Set()); map.get(key).add(fn); this.emit(col); return () => map.get(key).delete(fn); };
     const doc = (col, id) => ({
-      get: () => this.get(col, id),
-      set: data => this.put(col, id, data),
-      delete: () => this.del(col, id),
+      get: async () => { const v = this.docs[col + '/' + id]; const data = v && !v.x ? v.d : undefined; return { id, exists: data !== undefined, data: () => data }; },
+      set: async data => this.write(col, id, data),
+      delete: async () => this.write(col, id, null),
       onSnapshot: fn => sub(this.docSubs, col + '/' + id, fn, col),
     });
     return {
@@ -920,48 +883,292 @@ const Cloud = {
       doc: path => { const i = path.indexOf('/'); return doc(path.slice(0, i), path.slice(i + 1)); },
     };
   },
-  /** Primera vez en este dispositivo con esta cuenta: ofrece subir lo que haya guardado en el navegador. */
-  async migrate() {
-    const flag = 'controlvinted.migrated.' + this.user.id;
-    try { if (localStorage.getItem(flag)) return; } catch { return; }
-    const local = {};
-    for (const [key, cols] of Object.entries(SB_LOCAL)) {
+  /* --- datos que ya había en este navegador --- */
+  localDocs() {
+    const out = {};
+    for (const [key, cols] of Object.entries(SYNC_LOCAL)) {
       let d = null; try { d = JSON.parse(localStorage.getItem(key) || 'null'); } catch {}
-      for (const c of cols) local[c] = d && d[c] && typeof d[c] === 'object' ? d[c] : {};
+      for (const c of cols) {
+        const src = d && d[c] && typeof d[c] === 'object' ? d[c] : {};
+        if (c === 'settings') { if (Object.keys(src).length) out['settings/main'] = src; continue; }
+        for (const [id, v] of Object.entries(src)) if (ID_RE.test(id) && v) out[c + '/' + id] = c === 'history' ? { events: Array.isArray(v) ? v.slice(0, 300) : [] } : v;
+      }
     }
-    let cloudHist = new Set();
-    try { cloudHist = new Set((await this.client.from(SB_TABLE).select('id').eq('collection', 'history')).data?.map(r => r.id) || []); } catch {}
-    const has = (c, id) => c === 'history' ? cloudHist.has(id) : this.cache.get(c).has(id);
-    const todo = [];
-    for (const c of ['accounts', 'debts', 'history']) for (const [id, data] of Object.entries(local[c])) if (ID_RE.test(id) && data && !has(c, id)) todo.push([c, id, c === 'history' ? { events: Array.isArray(data) ? data.slice(0, 300) : [] } : data]);
-    const ls = local.settings, cs = this.cache.get('settings').get('main');
-    if (Object.keys(ls).length && !cs) todo.push(['settings', 'main', ls]);
-    const nA = todo.filter(t => t[0] === 'accounts').length, nD = todo.filter(t => t[0] === 'debts').length;
+    return out;
+  },
+  /** Al unirse desde un navegador con datos propios, ofrece añadirlos (una sola vez). */
+  async offerLocal() {
+    const flag = `controlvinted.sync.merged.${this.cfg.owner}/${this.cfg.repo}`;
+    try { if (localStorage.getItem(flag)) return; } catch { return; }
     const mark = () => { try { localStorage.setItem(flag, new Date().toISOString()); } catch {} };
-    if (!nA && !nD) {
-      for (const [c, id, data] of todo) { try { await this.put(c, id, data); } catch {} }
-      return mark();
-    }
-    const otherKey = cs && cs.vault && ls.vault && cs.vault.salt !== ls.vault.salt;
+    const local = this.localDocs();
+    const todo = Object.entries(local).filter(([k]) => !this.docs[k] && k !== 'settings/main');
+    if (!this.docs['settings/main'] && local['settings/main']) todo.push(['settings/main', local['settings/main']]);
+    const nA = todo.filter(([k]) => k.startsWith('accounts/')).length, nD = todo.filter(([k]) => k.startsWith('debts/')).length;
+    if (!nA && !nD) { todo.forEach(([k, v]) => { const i = k.indexOf('/'); this.write(k.slice(0, i), k.slice(i + 1), v); }); return mark(); }
+    const cs = this.docs['settings/main'] && this.docs['settings/main'].d, ls = local['settings/main'];
+    const otherKey = cs && cs.vault && ls && ls.vault && cs.vault.salt !== ls.vault.salt;
     await new Promise(resolve => {
-      const root = openLayer(`<div class="modal narrow" role="alertdialog" aria-labelledby="sbMT">
-        <div class="modal-h"><h2 id="sbMT">Subir los datos de este dispositivo</h2></div>
+      const root = openLayer(`<div class="modal narrow" role="alertdialog" aria-labelledby="syMT">
+        <div class="modal-h"><h2 id="syMT">Añadir los datos de este dispositivo</h2></div>
         <div class="modal-b">
-          <p style="margin:0">Este navegador tiene <b>${nA} ${nA === 1 ? 'cuenta' : 'cuentas'}</b> y <b>${nD} ${nD === 1 ? 'deuda' : 'deudas'}</b> que todavía no están en la nube. Si las subes, las verás en todos tus dispositivos. No se borra nada de lo que ya hay en la nube.</p>
-          ${otherKey ? `<div class="alert r">${ICON.lock}<p>Las contraseñas guardadas aquí usan otra clave maestra distinta de la de la nube: después de subirlas no se podrán descifrar y tendrás que volver a escribirlas.</p></div>` : ''}
+          <p style="margin:0">Este navegador tiene <b>${nA} ${nA === 1 ? 'cuenta' : 'cuentas'}</b> y <b>${nD} ${nD === 1 ? 'deuda' : 'deudas'}</b> que no están en tus datos sincronizados. Si las añades, las verás en todos tus dispositivos. No se borra nada.</p>
+          ${otherKey ? `<div class="alert r">${ICON.lock}<p>Las contraseñas guardadas aquí usan otra clave maestra: después de añadirlas no se podrán descifrar y tendrás que volver a escribirlas.</p></div>` : ''}
         </div>
-        <div class="modal-f"><button class="btn ghost" type="button" data-c="no">Ahora no</button><button class="btn primary" type="button" data-c="yes" autofocus>Subir a la nube</button></div></div>`,
+        <div class="modal-f"><button class="btn ghost" type="button" data-c="no">Ahora no</button><button class="btn primary" type="button" data-c="yes" autofocus>Añadir</button></div></div>`,
         { onClose: () => resolve() });
-      root.addEventListener('click', async e => {
+      root.addEventListener('click', e => {
         const c = e.target.closest('[data-c]'); if (!c) return;
-        if (c.dataset.c === 'no') { mark(); return closeLayer(); }
-        c.disabled = true;
-        let done = 0;
-        try {
-          for (const [col, id, data] of todo) { await this.put(col, id, data); done++; c.textContent = `Subiendo… ${done}/${todo.length}`; }
-          mark(); closeLayer(); toast('Datos subidos a la nube');
-        } catch (err) { c.disabled = false; c.textContent = 'Reintentar'; toast(`Se subieron ${done} de ${todo.length}. Comprueba la conexión.`, true); }
+        if (c.dataset.c === 'yes') { todo.forEach(([k, v]) => { const i = k.indexOf('/'); this.write(k.slice(0, i), k.slice(i + 1), v); }); toast('Datos añadidos'); }
+        mark(); closeLayer();
       });
+    });
+  },
+  /* --- conexión --- */
+  async connect() {
+    this.cfg = this.config();
+    if (!this.cfg || !Vault.supported) return null;
+    this.hookBadges();
+    let cred = null;
+    try { cred = JSON.parse(localStorage.getItem(SYNC_CRED) || 'null'); } catch {}
+    if (cred && cred.owner === this.cfg.owner && cred.repo === this.cfg.repo && cred.key && cred.token) {
+      this.cred = cred; this.aes = await this.importAes(unb64(cred.key));
+      try {
+        const c = JSON.parse(localStorage.getItem(SYNC_CACHE) || 'null');
+        if (c && c.owner === cred.owner && c.repo === cred.repo && c.docs) { this.docs = c.docs; this.sha = c.sha || null; if (c.pending) this.ver = 1; }
+      } catch {}
+      try {
+        const res = await this.pull({ force: true });
+        if (res && res.file) this.settle(await this.absorb(res));
+        else if (res === 'missing') { this.sha = null; if (Object.keys(this.docs).length && this.saved === this.ver) this.ver++; }
+      } catch (e) {
+        if (e && e.code === 'token') this.tokenProblem();
+        else toast('Sin conexión con GitHub: usas los datos guardados en este dispositivo. Se sincronizará al volver la conexión.', true);
+      }
+    } else {
+      try { if (localStorage.getItem(SYNC_OFF)) return null; } catch {}
+      if (!await this.setup()) return null;
+    }
+    this.connected = true;
+    this.renderBadgeHint();
+    setInterval(() => this.tick(), this.cfg.poll);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') this.tick(); else if (this.saved !== this.ver) this.push(); });
+    window.addEventListener('online', () => { this.failed = false; this.tick(); });
+    window.addEventListener('beforeunload', e => { if (this.saved !== this.ver) { this.push(); e.preventDefault(); e.returnValue = ''; } });
+    if (this.saved !== this.ver) this.schedule(300);
+    return this.api();
+  },
+  /** Primera vez en este dispositivo. true = conectado, false = seguir sin sincronizar. */
+  async setup() {
+    for (;;) {
+      let res;
+      try { res = await this.pull({ force: true, auth: false }); }
+      catch (e) {
+        if (e && e.code === 'format') { toast('El archivo de datos de GitHub no es válido.', true); return false; }
+        if (await this.offline()) continue; return false;
+      }
+      const ok = res === 'missing' ? await this.createFlow() : await this.joinFlow(res);
+      if (ok === 'retry') continue;
+      return ok;
+    }
+  },
+  offline() {
+    return new Promise(resolve => {
+      let done = false;
+      const root = openLayer(`<div class="modal narrow" role="alertdialog" aria-labelledby="syOffT">
+        <div class="modal-h"><h2 id="syOffT">Sin conexión con GitHub</h2></div>
+        <div class="modal-b"><p style="margin:0">No se pudo conectar para sincronizar tus datos. Comprueba la conexión a internet.</p><p class="muted" style="margin:0;font-size:12.5px">Si sigues sin sincronizar, lo que cambies ahora se queda solo en este navegador.</p></div>
+        <div class="modal-f"><button class="btn ghost" type="button" data-c="local">Seguir sin sincronizar</button><button class="btn primary" type="button" data-c="retry" autofocus>Reintentar</button></div></div>`,
+        { onClose: () => { if (!done) { done = true; resolve(true); } } });
+      root.addEventListener('click', e => { const c = e.target.closest('[data-c]'); if (!c) return; done = true; closeLayer(); resolve(c.dataset.c === 'retry'); });
+    });
+  },
+  /** Formulario genérico de la conexión; onSubmit devuelve un texto de error o nada si todo fue bien. */
+  form(id, title, body, submit, onSubmit, watch) {
+    return new Promise(resolve => {
+      let done = false;
+      // Mientras está abierto, «watch» puede resolverlo solo (p. ej. si otro dispositivo ya renovó el token).
+      const iv = watch ? setInterval(async () => {
+        if (done) return clearInterval(iv);
+        try { if (await watch() && !done) { done = true; clearInterval(iv); closeLayer(); resolve(true); } } catch {}
+      }, Math.max(this.cfg.poll, 5000)) : 0;
+      const show = () => {
+        const root = openLayer(`<form class="modal narrow" id="${id}" novalidate aria-labelledby="${id}T">
+          <div class="modal-h"><h2 id="${id}T">${title}</h2></div>
+          <div class="modal-b">${body}
+            <div class="alert r" data-syerr hidden><p></p></div>
+            <button class="link-btn" type="button" data-sy="local" style="align-self:flex-start">Usar sin sincronizar (solo este navegador)</button>
+          </div>
+          <div class="modal-f"><button class="btn primary" type="submit">${submit}</button></div></form>`, { onClose: () => { if (!done) setTimeout(show); } });
+        const form = $('#' + id, root);
+        form.addEventListener('click', e => {
+          const t = e.target.closest('[data-pwtoggle]');
+          if (t) { const i = t.parentElement.querySelector('input'); i.type = i.type === 'password' ? 'text' : 'password'; t.innerHTML = i.type === 'password' ? ICON.eye : ICON.eyeOff; }
+          if (e.target.closest('[data-sy="local"]')) { done = true; try { localStorage.setItem(SYNC_OFF, '1'); } catch {} closeLayer(); resolve(false); }
+        });
+        form.addEventListener('submit', async e => {
+          e.preventDefault();
+          const btn = form.querySelector('[type="submit"]'), box = form.querySelector('[data-syerr]');
+          btn.disabled = true; btn.textContent = 'Comprobando…'; box.hidden = true;
+          let msg;
+          try { msg = await onSubmit(form); } catch { msg = 'No se pudo conectar con GitHub. Comprueba la conexión e inténtalo de nuevo.'; }
+          if (msg) { btn.disabled = false; btn.textContent = submit; box.hidden = false; box.firstElementChild.textContent = msg; return; }
+          done = true; clearInterval(iv); closeLayer(); resolve(true);
+        });
+      };
+      show();
+    });
+  },
+  pwInput(id, label, extra = '') {
+    return `<div class="fg"><label for="${id}">${label}</label><div class="pw"><input class="field" id="${id}" type="password" spellcheck="false" ${extra}><button type="button" data-pwtoggle aria-label="Mostrar u ocultar">${ICON.eye}</button></div></div>`;
+  },
+  tokenSteps() {
+    return `<details class="note-box" style="white-space:normal"><summary style="cursor:pointer;color:var(--fg)">Cómo crear el token (3 minutos)</summary>
+      <ol style="margin:10px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:6px">
+        <li>Abre <a href="${TOKEN_URL}" target="_blank" rel="noopener" style="color:var(--blue)">esta página de GitHub</a> con tu cuenta iniciada.</li>
+        <li><b>Token name:</b> CONTROLVINTED. <b>Expiration:</b> la más larga que te deje.</li>
+        <li><b>Repository access:</b> «Only select repositories» y elige <b>${esc(this.cfg.repo)}</b>.</li>
+        <li><b>Permissions → Repository permissions → Contents:</b> «Read and write».</li>
+        <li>Pulsa <b>Generate token</b>, copia el código (empieza por <span class="mono">github_pat_</span>) y pégalo aquí.</li>
+      </ol></details>`;
+  },
+  async checkToken(token) {
+    const r = await fetch(`${this.cfg.api}${this.repoPath()}`, { headers: { Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + token }, cache: 'no-store' });
+    if (r.status === 401) return 'Ese token no es válido o ha caducado.';
+    if (r.status === 404) return `Ese token no tiene acceso al repositorio ${this.cfg.repo}. Revisa el paso 3.`;
+    if (!r.ok) return 'GitHub no ha aceptado el token. Inténtalo de nuevo en un momento.';
+    const j = await r.json();
+    if (!j.permissions || !j.permissions.push) return 'El token no puede escribir. Revisa el paso 4: Contents → Read and write.';
+    return '';
+  },
+  async ensureBranch() {
+    const b = await this.gh(this.repoPath(`/branches/${encodeURIComponent(this.cfg.branch)}`));
+    if (b.ok) return '';
+    if (b.status !== 404) return 'No se pudo comprobar el repositorio.';
+    const repo = await (await this.gh(this.repoPath())).json();
+    const base = await this.gh(this.repoPath(`/git/ref/heads/${encodeURIComponent(repo.default_branch || 'main')}`));
+    if (!base.ok) return 'No se pudo preparar el repositorio.';
+    const r = await this.gh(this.repoPath('/git/refs'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ref: 'refs/heads/' + this.cfg.branch, sha: (await base.json()).object.sha }) });
+    return r.ok ? '' : 'El token no puede crear la rama de datos. Revisa el paso 4.';
+  },
+  createFlow() {
+    const local = this.localDocs();
+    const nA = Object.keys(local).filter(k => k.startsWith('accounts/')).length, nD = Object.keys(local).filter(k => k.startsWith('debts/')).length;
+    return this.form('syNew', 'Sincronizar tus dispositivos', `
+      <p style="margin:0;color:var(--fg-2)">Tus datos se guardarán <b>cifrados</b> en tu GitHub y los verás iguales en el móvil y en el ordenador. Esto solo se hace una vez, en este dispositivo.</p>
+      ${nA || nD ? `<div class="alert b"><p>Se subirán los datos de este navegador: ${nA} ${nA === 1 ? 'cuenta' : 'cuentas'} y ${nD} ${nD === 1 ? 'deuda' : 'deudas'}.</p></div>` : ''}
+      <div class="fg"><label for="sy-token">1. Token de GitHub</label><input class="field mono" id="sy-token" autocomplete="off" spellcheck="false" placeholder="github_pat_…" autofocus><span class="hint">Permite a la web guardar en tu repositorio. Se guarda cifrado.</span></div>
+      ${this.tokenSteps()}
+      ${this.pwInput('sy-pass', '2. Clave de acceso a tus datos', 'autocomplete="new-password" placeholder="Mínimo 10 caracteres"')}
+      ${this.pwInput('sy-pass2', 'Repite la clave', 'autocomplete="new-password"')}
+      <p class="hint muted" style="margin:0;font-size:12px">Es la que escribirás en cada dispositivo nuevo. Puede ser la misma que tu clave maestra. Si la olvidas, no se pueden recuperar los datos de GitHub.</p>`,
+      'Activar sincronización', async () => {
+        const token = $('#sy-token').value.trim(), p1 = $('#sy-pass').value, p2 = $('#sy-pass2').value;
+        if (!/^(github_pat_|ghp_)[A-Za-z0-9_]{20,}$/.test(token)) return 'Pega el token de GitHub completo (empieza por github_pat_).';
+        if (p1.length < 10) return 'La clave de acceso debe tener al menos 10 caracteres.';
+        if (p1 !== p2) return 'Las dos claves no coinciden.';
+        const bad = await this.checkToken(token); if (bad) return bad;
+        const salt = crypto.getRandomValues(new Uint8Array(16));
+        const raw = await this.deriveRaw(p1, salt, SYNC_ITER);
+        this.cred = { owner: this.cfg.owner, repo: this.cfg.repo, token, key: b64(raw), salt: b64(salt), iter: SYNC_ITER };
+        this.aes = await this.importAes(raw);
+        const br = await this.ensureBranch(); if (br) { this.cred = null; return br; }
+        const exists = await this.pull({ force: true });
+        if (exists !== 'missing') { this.cred = null; return 'Otro dispositivo acaba de activar la sincronización. Cierra y vuelve a abrir la página.'; }
+        const t = Date.now();
+        this.docs = Object.fromEntries(Object.entries(local).map(([k, d]) => [k, { t, d }]));
+        this.ver = 1; this.saved = 0;
+        this.failed = false;
+        await this.push();
+        if (this.saved !== this.ver) { this.cred = null; this.docs = {}; return 'No se pudo guardar en GitHub. Inténtalo de nuevo.'; }
+        this.saveCred();
+        try { localStorage.setItem(`controlvinted.sync.merged.${this.cfg.owner}/${this.cfg.repo}`, new Date().toISOString()); } catch {}
+        return '';
+      });
+  },
+  joinFlow(res) {
+    return this.form('syJoin', 'Conectar este dispositivo', `
+      <p style="margin:0;color:var(--fg-2)">Tus datos ya están sincronizados en GitHub. Escribe tu clave de acceso para verlos aquí. Solo se pide una vez en cada dispositivo.</p>
+      ${this.pwInput('sy-pass', 'Clave de acceso a tus datos', 'autocomplete="current-password" autofocus')}`,
+      'Conectar', async () => {
+        const pass = $('#sy-pass').value;
+        if (!pass) return 'Escribe tu clave de acceso.';
+        const f = res.file, salt = unb64(f.salt);
+        const raw = await this.deriveRaw(pass, salt, f.iter || SYNC_ITER);
+        const key = await this.importAes(raw);
+        let token;
+        try { token = await this.unseal(f.tok, key); } catch { return 'Clave incorrecta.'; }
+        this.cred = { owner: this.cfg.owner, repo: this.cfg.repo, token, key: b64(raw), salt: f.salt, iter: f.iter || SYNC_ITER };
+        this.aes = key;
+        this.docs = {}; this.sha = null;
+        await this.absorb(res);
+        this.saved = this.ver = 0;
+        this.saveCred(); this.persist();
+        setTimeout(() => this.offerLocal(), 400);
+        return '';
+      });
+  },
+  /** El token ha caducado o se ha retirado: primero mira si otro dispositivo ya puso uno nuevo. */
+  async tokenProblem() {
+    if (this.asking) return;
+    this.asking = true;
+    const adopt = async () => {
+      const res = await this.pull({ force: true, auth: false });
+      if (!res || !res.file) return false;
+      const t = await this.unseal(res.file.tok);
+      if (!t || t === this.cred.token) return false;
+      this.cred.token = t; this.saveCred(); return true;
+    };
+    try { if (await adopt()) { this.asking = false; this.tick(); return; } } catch {}
+    await this.form('syTok', 'Renueva el acceso a GitHub', `
+      <p style="margin:0;color:var(--fg-2)">El token de GitHub ha caducado o se ha retirado, así que no se pueden guardar los cambios. Crea uno nuevo y pégalo aquí. Tus datos siguen a salvo en este dispositivo.</p>
+      <div class="fg"><label for="sy-token">Token nuevo de GitHub</label><input class="field mono" id="sy-token" autocomplete="off" spellcheck="false" placeholder="github_pat_…" autofocus></div>
+      ${this.tokenSteps()}`,
+      'Guardar token', async () => {
+        const token = $('#sy-token').value.trim();
+        if (!/^(github_pat_|ghp_)[A-Za-z0-9_]{20,}$/.test(token)) return 'Pega el token de GitHub completo (empieza por github_pat_).';
+        const bad = await this.checkToken(token); if (bad) return bad;
+        this.cred.token = token; this.saveCred(); this.ver++;
+        return '';
+      }, adopt);
+    this.asking = false;
+    if (this.cred && this.cred.token) { this.failed = false; this.tick(); }
+  },
+  hookBadges() {
+    ['#storeBadge', '#debtStoreBadge'].forEach(sel => {
+      const b = $(sel); if (!b) return;
+      b.style.cursor = 'pointer';
+      b.addEventListener('click', () => this.openStatus());
+    });
+  },
+  renderBadgeHint() { ['#storeBadge', '#debtStoreBadge'].forEach(sel => { const b = $(sel); if (b) b.dataset.sync = '1'; }); },
+  openStatus() {
+    if (!this.connected) {
+      const root = openLayer(`<div class="modal narrow" role="dialog" aria-labelledby="syStT">
+        <div class="modal-h"><h2 id="syStT">Sincronización</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+        <div class="modal-b"><p style="margin:0">Ahora los datos se guardan solo en este navegador. Activa la sincronización para verlos iguales en todos tus dispositivos.</p></div>
+        <div class="modal-f"><button class="btn ghost" type="button" data-close>Ahora no</button><button class="btn primary" type="button" data-c="on">Activar sincronización</button></div></div>`);
+      root.addEventListener('click', e => {
+        if (e.target.closest('[data-close]')) return closeLayer();
+        if (e.target.closest('[data-c="on"]')) { try { localStorage.removeItem(SYNC_OFF); } catch {} location.reload(); }
+      });
+      return;
+    }
+    const pending = this.saved !== this.ver;
+    const root = openLayer(`<div class="modal narrow" role="dialog" aria-labelledby="syStT">
+      <div class="modal-h"><h2 id="syStT">Sincronización</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+      <div class="modal-b">
+        <div class="alert ${pending ? 'o' : 'g'}">${ICON.shield}<p>${pending ? 'Hay cambios pendientes de guardar en GitHub. Se guardarán solos en cuanto haya conexión.' : 'Todo guardado. Tus datos están cifrados en GitHub y se ven iguales en todos tus dispositivos.'}</p></div>
+        <dl class="kv"><dt>Repositorio</dt><dd>${esc(this.cfg.owner)}/${esc(this.cfg.repo)}</dd><dt>Último guardado desde aquí</dt><dd>${this.lastSave ? esc(fmtDateTime(this.lastSave.toISOString())) : '—'}</dd></dl>
+      </div>
+      <div class="modal-f"><button class="btn ghost" type="button" data-c="out">Desconectar este dispositivo</button><button class="btn primary" type="button" data-close>Listo</button></div></div>`);
+    root.addEventListener('click', e => {
+      if (e.target.closest('[data-close]')) return closeLayer();
+      if (e.target.closest('[data-c="out"]')) {
+        if (this.saved !== this.ver) { toast('Espera a que se guarden los cambios pendientes', true); return; }
+        try { localStorage.removeItem(SYNC_CRED); localStorage.removeItem(SYNC_CACHE); localStorage.setItem(SYNC_OFF, '1'); } catch {}
+        location.reload();
+      }
     });
   },
 };
