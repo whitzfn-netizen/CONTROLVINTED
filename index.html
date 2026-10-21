@@ -957,31 +957,38 @@ const Sync = {
     return out;
   },
   /** Al unirse desde un navegador con datos propios, ofrece añadirlos (una sola vez). */
-  async offerLocal() {
-    const flag = `controlvinted.sync.merged.${this.cfg.owner}/${this.cfg.repo}`;
-    try { if (localStorage.getItem(flag)) return; } catch { return; }
+  async offerLocal(force) {
+    const flag = `controlvinted.sync.merged2.${this.cfg.owner}/${this.cfg.repo}`;
+    if (!force) { try { if (localStorage.getItem(flag)) return; } catch { return; } }
     const mark = () => { try { localStorage.setItem(flag, new Date().toISOString()); } catch {} };
     const local = this.localDocs();
     const todo = Object.entries(local).filter(([k]) => !this.docs[k] && k !== 'settings/main');
     if (!this.docs['settings/main'] && local['settings/main']) todo.push(['settings/main', local['settings/main']]);
     const nA = todo.filter(([k]) => k.startsWith('accounts/')).length, nD = todo.filter(([k]) => k.startsWith('debts/')).length;
     const nM = todo.filter(([k]) => /^(purchases|stockSales|supplierPayments)\//.test(k)).length;
-    if (!nA && !nD && !nM) { todo.forEach(([k, v]) => { const i = k.indexOf('/'); this.write(k.slice(0, i), k.slice(i + 1), v); }); return mark(); }
+    if (!nA && !nD && !nM) {
+      todo.forEach(([k, v]) => { const i = k.indexOf('/'); this.write(k.slice(0, i), k.slice(i + 1), v); });
+      if (force) toast('Este navegador no tiene cuentas, deudas ni mercancía que falten en tus datos sincronizados');
+      return mark();
+    }
     const cs = this.docs['settings/main'] && this.docs['settings/main'].d, ls = local['settings/main'];
     const otherKey = cs && cs.vault && ls && ls.vault && cs.vault.salt !== ls.vault.salt;
+    const parts = [[nA, 'cuenta', 'cuentas'], [nD, 'deuda', 'deudas'], [nM, 'registro de mercancía', 'registros de mercancía']]
+      .filter(([n]) => n).map(([n, one, many]) => `<b>${n} ${n === 1 ? one : many}</b>`);
+    const what = parts.length > 1 ? parts.slice(0, -1).join(', ') + ' y ' + parts[parts.length - 1] : parts[0];
     await new Promise(resolve => {
       const root = openLayer(`<div class="modal narrow" role="alertdialog" aria-labelledby="syMT">
         <div class="modal-h"><h2 id="syMT">Añadir los datos de este dispositivo</h2></div>
         <div class="modal-b">
-          <p style="margin:0">Este navegador tiene <b>${nA} ${nA === 1 ? 'cuenta' : 'cuentas'}</b> y <b>${nD} ${nD === 1 ? 'deuda' : 'deudas'}</b>, y <b>${nM} ${nM === 1 ? 'registro' : 'registros'} de mercancía</b>, que no están en tus datos sincronizados. Si las añades, las verás en todos tus dispositivos. No se borra nada.</p>
+          <p style="margin:0">Este navegador tiene ${what} que no están en tus datos sincronizados. Si los añades, los verás en todos tus dispositivos. No se borra nada.</p>
           ${otherKey ? `<div class="alert r">${ICON.lock}<p>Las contraseñas guardadas aquí usan otra clave maestra: después de añadirlas no se podrán descifrar y tendrás que volver a escribirlas.</p></div>` : ''}
         </div>
         <div class="modal-f"><button class="btn ghost" type="button" data-c="no">Ahora no</button><button class="btn primary" type="button" data-c="yes" autofocus>Añadir</button></div></div>`,
         { onClose: () => resolve() });
       root.addEventListener('click', e => {
         const c = e.target.closest('[data-c]'); if (!c) return;
-        if (c.dataset.c === 'yes') { todo.forEach(([k, v]) => { const i = k.indexOf('/'); this.write(k.slice(0, i), k.slice(i + 1), v); }); toast('Datos añadidos'); }
-        mark(); closeLayer();
+        if (c.dataset.c === 'yes') { todo.forEach(([k, v]) => { const i = k.indexOf('/'); this.write(k.slice(0, i), k.slice(i + 1), v); }); toast('Datos añadidos'); mark(); }
+        closeLayer();
       });
     });
   },
@@ -1012,6 +1019,8 @@ const Sync = {
     }
     this.connected = true;
     this.renderBadgeHint();
+    // Un dispositivo ya conectado que guarda datos propios sin subir: vuelve a ofrecerlos.
+    if (this.cred === cred) setTimeout(() => this.offerLocal(), 1500);
     setInterval(() => this.tick(), this.cfg.poll);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') this.tick(); else if (this.saved !== this.ver) this.push(); });
     window.addEventListener('online', () => { this.failed = false; this.tick(); });
@@ -1144,7 +1153,7 @@ const Sync = {
         await this.push();
         if (this.saved !== this.ver) { this.cred = null; this.docs = {}; return 'No se pudo guardar en GitHub. Inténtalo de nuevo.'; }
         this.saveCred();
-        try { localStorage.setItem(`controlvinted.sync.merged.${this.cfg.owner}/${this.cfg.repo}`, new Date().toISOString()); } catch {}
+        try { localStorage.setItem(`controlvinted.sync.merged2.${this.cfg.owner}/${this.cfg.repo}`, new Date().toISOString()); } catch {}
         return '';
       });
   },
@@ -1197,13 +1206,13 @@ const Sync = {
     if (this.cred && this.cred.token) { this.failed = false; this.tick(); }
   },
   hookBadges() {
-    ['#storeBadge', '#debtStoreBadge'].forEach(sel => {
+    ['#storeBadge', '#debtStoreBadge', '#mercStoreBadge'].forEach(sel => {
       const b = $(sel); if (!b) return;
       b.style.cursor = 'pointer';
       b.addEventListener('click', () => this.openStatus());
     });
   },
-  renderBadgeHint() { ['#storeBadge', '#debtStoreBadge'].forEach(sel => { const b = $(sel); if (b) b.dataset.sync = '1'; }); },
+  renderBadgeHint() { ['#storeBadge', '#debtStoreBadge', '#mercStoreBadge'].forEach(sel => { const b = $(sel); if (b) b.dataset.sync = '1'; }); },
   openStatus() {
     if (!this.connected) {
       const root = openLayer(`<div class="modal narrow" role="dialog" aria-labelledby="syStT">
@@ -1222,10 +1231,12 @@ const Sync = {
       <div class="modal-b">
         <div class="alert ${pending ? 'o' : 'g'}">${ICON.shield}<p>${pending ? 'Hay cambios pendientes de guardar en GitHub. Se guardarán solos en cuanto haya conexión.' : 'Todo guardado. Tus datos están cifrados en GitHub y se ven iguales en todos tus dispositivos.'}</p></div>
         <dl class="kv"><dt>Repositorio</dt><dd>${esc(this.cfg.owner)}/${esc(this.cfg.repo)}</dd><dt>Último guardado desde aquí</dt><dd>${this.lastSave ? esc(fmtDateTime(this.lastSave.toISOString())) : '—'}</dd></dl>
+        <p class="hint muted" style="margin:0;font-size:12px">¿Faltan cuentas, deudas o mercancía que tenías en este navegador antes de sincronizar? Usa «Recuperar datos de este navegador»: se añaden sin borrar nada.</p>
       </div>
-      <div class="modal-f"><button class="btn ghost" type="button" data-c="out">Desconectar este dispositivo</button><button class="btn primary" type="button" data-close>Listo</button></div></div>`);
+      <div class="modal-f"><button class="btn ghost" type="button" data-c="out">Desconectar este dispositivo</button><button class="btn" type="button" data-c="local">Recuperar datos de este navegador</button><button class="btn primary" type="button" data-close>Listo</button></div></div>`);
     root.addEventListener('click', e => {
       if (e.target.closest('[data-close]')) return closeLayer();
+      if (e.target.closest('[data-c="local"]')) { closeLayer(); this.offerLocal(true); return; }
       if (e.target.closest('[data-c="out"]')) {
         if (this.saved !== this.ver) { toast('Espera a que se guarden los cambios pendientes', true); return; }
         try { localStorage.removeItem(SYNC_CRED); localStorage.removeItem(SYNC_CACHE); localStorage.setItem(SYNC_OFF, '1'); } catch {}
