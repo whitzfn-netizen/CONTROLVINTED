@@ -359,6 +359,7 @@ textarea.field{resize:vertical;min-height:84px}
 .pay-row b{font-variant-numeric:tabular-nums}
 .qbtn.go{color:var(--fg);border-color:var(--line-2)}
 @media (max-width:560px){ .maintabs{width:100%} .maintabs button{flex:1 1 0;padding:10px 12px} }
+@media (max-width:420px){ .maintabs{gap:2px;padding:4px} .maintabs button{padding:10px 4px;font-size:12.5px;letter-spacing:.02em;min-width:0;gap:4px} .maintabs .em{font-size:14px} }
 .split .av,.track .av{background:var(--blue)}
 .mv-list{max-height:320px;overflow:auto;padding-right:4px}
 @media (max-width:1080px){ .kpis{grid-template-columns:repeat(2,minmax(0,1fr))} .overview{grid-template-columns:1fr} }
@@ -400,6 +401,7 @@ textarea.field{resize:vertical;min-height:84px}
   <nav class="maintabs" id="mainTabs" role="tablist" aria-label="Secciones">
     <button type="button" role="tab" id="tab-vinted" aria-controls="view-vinted" aria-selected="true" data-main-tab="vinted"><span class="em" aria-hidden="true">📦</span>VINTED</button>
     <button type="button" role="tab" id="tab-deudas" aria-controls="view-deudas" aria-selected="false" tabindex="-1" data-main-tab="deudas"><span class="em" aria-hidden="true">💸</span>DEUDAS<span class="tab-n" id="tabDebtN" hidden></span></button>
+    <button type="button" role="tab" id="tab-merc" aria-controls="view-merc" aria-selected="false" tabindex="-1" data-main-tab="merc"><span class="em" aria-hidden="true">🔌</span>MERCANCÍA</button>
   </nav>
   <div class="tabview" id="view-vinted" role="tabpanel" aria-labelledby="tab-vinted">
   <header class="top">
@@ -502,6 +504,28 @@ textarea.field{resize:vertical;min-height:84px}
       </div>
     </div>
     <div id="debtArea"><div class="loading">Cargando tus deudas…</div></div>
+  </section>
+  </div>
+  <div class="tabview" id="view-merc" role="tabpanel" aria-labelledby="tab-merc" hidden>
+  <header class="top">
+    <div class="brand">
+      <h1>Mercancía y stock</h1>
+      <p><span id="mercStoreBadge" class="badge"><span class="dot"></span><span>Conectando…</span></span></p>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="btnMercBackup" type="button"><svg class="i" viewBox="0 0 24 24"><path d="M12 3 4.5 6v6c0 4.5 3.2 7.8 7.5 9 4.3-1.2 7.5-4.5 7.5-9V6L12 3Z"/><path d="m9 12 2 2 4-4"/></svg>Copia de la mercancía</button>
+      <button class="btn primary" id="btnMercAdd" type="button"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Registrar compra</button>
+    </div>
+  </header>
+
+  <section class="kpis" id="mercKpis" aria-label="Resumen de mercancía"></section>
+
+  <section class="panel" aria-label="Compras">
+    <div class="toolbar">
+      <div class="chips" id="mChips" role="toolbar" aria-label="Filtrar compras"></div>
+      <div class="meta-row"><span id="mResult"></span></div>
+    </div>
+    <div id="mArea"><div class="loading">Cargando tu mercancía…</div></div>
   </section>
   </div>
 </div>
@@ -764,7 +788,7 @@ const Store = {
    datos del artefacto (collection/doc, get/set/delete, onSnapshot), así el resto de la app no cambia. */
 const SYNC_CRED = 'controlvinted.sync', SYNC_CACHE = 'controlvinted.sync.cache', SYNC_OFF = 'controlvinted.sync.off';
 const SYNC_ITER = 310000, SYNC_TOMB_MS = 90 * 86400000;
-const SYNC_LOCAL = { 'vinted-control.v1': ['accounts', 'history', 'settings', 'movements'], 'vinted-control.debts.v1': ['debts'] };
+const SYNC_LOCAL = { 'vinted-control.v1': ['accounts', 'history', 'settings', 'movements'], 'vinted-control.debts.v1': ['debts'], 'vinted-control.mercancia.v1': ['purchases', 'stockSales', 'supplierPayments'] };
 const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new';
 const Sync = {
   cfg: null, cred: null, aes: null, docs: {}, sha: null, etag: null, ver: 0, saved: 0, saving: false, again: false, timer: 0,
@@ -941,14 +965,15 @@ const Sync = {
     const todo = Object.entries(local).filter(([k]) => !this.docs[k] && k !== 'settings/main');
     if (!this.docs['settings/main'] && local['settings/main']) todo.push(['settings/main', local['settings/main']]);
     const nA = todo.filter(([k]) => k.startsWith('accounts/')).length, nD = todo.filter(([k]) => k.startsWith('debts/')).length;
-    if (!nA && !nD) { todo.forEach(([k, v]) => { const i = k.indexOf('/'); this.write(k.slice(0, i), k.slice(i + 1), v); }); return mark(); }
+    const nM = todo.filter(([k]) => /^(purchases|stockSales|supplierPayments)\//.test(k)).length;
+    if (!nA && !nD && !nM) { todo.forEach(([k, v]) => { const i = k.indexOf('/'); this.write(k.slice(0, i), k.slice(i + 1), v); }); return mark(); }
     const cs = this.docs['settings/main'] && this.docs['settings/main'].d, ls = local['settings/main'];
     const otherKey = cs && cs.vault && ls && ls.vault && cs.vault.salt !== ls.vault.salt;
     await new Promise(resolve => {
       const root = openLayer(`<div class="modal narrow" role="alertdialog" aria-labelledby="syMT">
         <div class="modal-h"><h2 id="syMT">Añadir los datos de este dispositivo</h2></div>
         <div class="modal-b">
-          <p style="margin:0">Este navegador tiene <b>${nA} ${nA === 1 ? 'cuenta' : 'cuentas'}</b> y <b>${nD} ${nD === 1 ? 'deuda' : 'deudas'}</b> que no están en tus datos sincronizados. Si las añades, las verás en todos tus dispositivos. No se borra nada.</p>
+          <p style="margin:0">Este navegador tiene <b>${nA} ${nA === 1 ? 'cuenta' : 'cuentas'}</b> y <b>${nD} ${nD === 1 ? 'deuda' : 'deudas'}</b>, y <b>${nM} ${nM === 1 ? 'registro' : 'registros'} de mercancía</b>, que no están en tus datos sincronizados. Si las añades, las verás en todos tus dispositivos. No se borra nada.</p>
           ${otherKey ? `<div class="alert r">${ICON.lock}<p>Las contraseñas guardadas aquí usan otra clave maestra: después de añadirlas no se podrán descifrar y tendrás que volver a escribirlas.</p></div>` : ''}
         </div>
         <div class="modal-f"><button class="btn ghost" type="button" data-c="no">Ahora no</button><button class="btn primary" type="button" data-c="yes" autofocus>Añadir</button></div></div>`,
@@ -1090,9 +1115,10 @@ const Sync = {
   createFlow() {
     const local = this.localDocs();
     const nA = Object.keys(local).filter(k => k.startsWith('accounts/')).length, nD = Object.keys(local).filter(k => k.startsWith('debts/')).length;
+    const nM = Object.keys(local).filter(k => /^(purchases|stockSales|supplierPayments)\//.test(k)).length;
     return this.form('syNew', 'Sincronizar tus dispositivos', `
       <p style="margin:0;color:var(--fg-2)">Tus datos se guardarán <b>cifrados</b> en tu GitHub y los verás iguales en el móvil y en el ordenador. Esto solo se hace una vez, en este dispositivo.</p>
-      ${nA || nD ? `<div class="alert b"><p>Se subirán los datos de este navegador: ${nA} ${nA === 1 ? 'cuenta' : 'cuentas'} y ${nD} ${nD === 1 ? 'deuda' : 'deudas'}.</p></div>` : ''}
+      ${nA || nD || nM ? `<div class="alert b"><p>Se subirán los datos de este navegador: ${nA} ${nA === 1 ? 'cuenta' : 'cuentas'}, ${nD} ${nD === 1 ? 'deuda' : 'deudas'} y ${nM} ${nM === 1 ? 'registro' : 'registros'} de mercancía.</p></div>` : ''}
       <div class="fg"><label for="sy-token">1. Token de GitHub</label><input class="field mono" id="sy-token" autocomplete="off" spellcheck="false" placeholder="github_pat_…" autofocus><span class="hint">Permite a la web guardar en tu repositorio. Se guarda cifrado.</span></div>
       ${this.tokenSteps()}
       ${this.pwInput('sy-pass', '2. Clave de acceso a tus datos', 'autocomplete="new-password" placeholder="Mínimo 10 caracteres"')}
@@ -2522,22 +2548,6 @@ $('#listArea').addEventListener('change', async e => {
    lee ni escribe cuentas, historial ni ajustes de VINTED.
    ========================================================================== */
 
-/* ---------- Pestañas principales ---------- */
-const TAB_KEY = 'vinted-control.tab';
-function showTab(t, focus) {
-  $('#view-vinted').hidden = t !== 'vinted';
-  $('#view-deudas').hidden = t !== 'deudas';
-  $$('[data-main-tab]').forEach(b => { const on = b.dataset.mainTab === t; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; });
-  try { localStorage.setItem(TAB_KEY, t); } catch {}
-  if (focus) $(`[data-main-tab="${t}"]`).focus();
-}
-$('#mainTabs').addEventListener('click', e => { const b = e.target.closest('[data-main-tab]'); if (b) showTab(b.dataset.mainTab); });
-$('#mainTabs').addEventListener('keydown', e => {
-  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-  e.preventDefault();
-  showTab($('#view-vinted').hidden ? 'vinted' : 'deudas', true);
-});
-try { showTab(localStorage.getItem(TAB_KEY) === 'deudas' ? 'deudas' : 'vinted'); } catch { showTab('vinted'); }
 
 /* ---------- Modelo ---------- */
 const DEBT_KEY = 'vinted-control.debts.v1';
@@ -3083,8 +3093,642 @@ $('#debtArea').addEventListener('keydown', e => {
 });
 renderDebtKpis(); renderDebtFilters();
 
+/* ==========================================================================
+   MERCANCÍA — compras de mercancía, stock y deuda con el proveedor. Módulo
+   independiente de VINTED y de DEUDAS: sus datos van aparte (colecciones
+   «purchases», «stockSales» y «supplierPayments», o la clave local
+   «vinted-control.mercancia.v1») y nunca tocan cuentas, historial ni deudas.
+   Las ventas y los pagos son registros inmutables: se añaden o se eliminan,
+   nunca se editan, así dos dispositivos no se pisan el historial.
+   ========================================================================== */
+
+/* ---------- Pestañas principales ---------- */
+const TAB_KEY = 'vinted-control.tab';
+const TABS = ['vinted', 'deudas', 'merc'];
+function showTab(t, focus) {
+  for (const v of TABS) $('#view-' + v).hidden = t !== v;
+  $$('[data-main-tab]').forEach(b => { const on = b.dataset.mainTab === t; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; });
+  try { localStorage.setItem(TAB_KEY, t); } catch {}
+  if (focus) $(`[data-main-tab="${t}"]`).focus();
+}
+$('#mainTabs').addEventListener('click', e => { const b = e.target.closest('[data-main-tab]'); if (b) showTab(b.dataset.mainTab); });
+$('#mainTabs').addEventListener('keydown', e => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  e.preventDefault();
+  const cur = TABS.find(t => !$('#view-' + t).hidden) || 'vinted';
+  showTab(TABS[(TABS.indexOf(cur) + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length], true);
+});
+{
+  let saved = 'vinted';
+  try { saved = localStorage.getItem(TAB_KEY) || 'vinted'; } catch {}
+  showTab(TABS.includes(saved) ? saved : 'vinted');
+}
+
+/* ---------- Modelo ---------- */
+const MERC_KEY = 'vinted-control.mercancia.v1';
+const MCOLS = ['purchases', 'stockSales', 'supplierPayments'];
+const MAX_UNITS = 999999;
+const MST = { stock:{label:'En stock', t:'b'}, agotada:{label:'Agotada', t:'g'} };
+const BOX = '<svg class="i" viewBox="0 0 24 24"><path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"/></svg>';
+const unitsOf = v => { const t = String(v ?? '').trim(); return /^\d+$/.test(t) && Number(t) > 0 && Number(t) <= MAX_UNITS ? Number(t) : null; };
+/** Ventas y pagos agregados por compra. */
+function mercStats() {
+  const st = new Map();
+  for (const p of Merc.items.purchases.values()) st.set(p.id, { sold: 0, recovered: 0, paid: 0 });
+  for (const s of Merc.items.stockSales.values()) { const x = st.get(s.purchaseId); if (x) { x.sold += s.units || 0; x.recovered += s.amount || 0; } }
+  for (const s of Merc.items.supplierPayments.values()) { const x = st.get(s.purchaseId); if (x) x.paid += s.amount || 0; }
+  return st;
+}
+/** Cifras de una compra: total automático, stock, deuda con el proveedor y dinero recuperado. */
+function mLine(p, s) {
+  const total = (p.units || 0) * (p.unitPrice || 0);
+  return { total, sold: s.sold, left: Math.max(0, (p.units || 0) - s.sold), recovered: s.recovered, toRecover: Math.max(0, total - s.recovered), paid: s.paid, debt: Math.max(0, total - s.paid) };
+}
+function mercRows() {
+  const st = mercStats();
+  return [...Merc.items.purchases.values()]
+    .map(p => ({ p, l: mLine(p, st.get(p.id) || { sold: 0, recovered: 0, paid: 0 }) }))
+    .sort((a, b) => (b.p.date || '').localeCompare(a.p.date || '') || (b.p.createdAt || '').localeCompare(a.p.createdAt || '') || norm(a.p.name).localeCompare(norm(b.p.name), 'es'));
+}
+function mercTotals(rows) {
+  const t = { n: rows.length, units: 0, sold: 0, left: 0, total: 0, paid: 0, debt: 0, recovered: 0, toRecover: 0 };
+  for (const { p, l } of rows) {
+    t.units += p.units || 0; t.sold += l.sold; t.left += l.left; t.total += l.total; t.paid += l.paid;
+    t.debt += l.debt; t.recovered += l.recovered; t.toRecover += l.toRecover;
+  }
+  return t;
+}
+function mercRecords(col, pid) {
+  return [...Merc.items[col].values()].filter(r => r.purchaseId === pid)
+    .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.at || '').localeCompare(a.at || ''));
+}
+
+/* ---------- Almacenamiento propio ---------- */
+const Merc = {
+  mode: 'loading', db: null, local: null,
+  items: { purchases: new Map(), stockSales: new Map(), supplierPayments: new Map() },
+  async init() {
+    if (Store.mode === 'db' && Store.db && await this.tryDb(Store.db)) return;
+    this.useLocal();
+  },
+  tryDb(db) {
+    return new Promise(resolve => {
+      let waiting = MCOLS.length, failed = false;
+      try {
+        for (const col of MCOLS) {
+          let first = true;
+          db.collection(col).onSnapshot(snap => {
+            this.mode = 'db'; this.db = db;
+            this.items[col] = new Map(snap.docs.map(d => [d.id, { ...d.data(), id: d.id }]));
+            if (first) { first = false; if (--waiting === 0 && !failed) resolve(true); }
+            mercChanged();
+          }, err => {
+            if (first) { first = false; if (!failed) { failed = true; resolve(false); } return; }
+            toast(err && err.code === 'revoked' ? 'Se ha perdido el acceso a los datos.' : 'Se ha perdido la sincronización de la mercancía. Recarga la página.', true);
+          });
+        }
+      } catch { resolve(false); }
+    });
+  },
+  useLocal() {
+    this.mode = 'local';
+    let data = null;
+    try { data = JSON.parse(localStorage.getItem(MERC_KEY) || 'null'); } catch { data = null; }
+    this.local = data && typeof data === 'object' ? data : {};
+    for (const col of MCOLS) {
+      const src = this.local[col] && typeof this.local[col] === 'object' ? this.local[col] : {};
+      this.local[col] = src;
+      this.items[col] = new Map(Object.entries(src).map(([id, d]) => [id, { ...d, id }]));
+    }
+    mercChanged();
+  },
+  persist() {
+    try { localStorage.setItem(MERC_KEY, JSON.stringify(this.local)); return true; }
+    catch { toast('Este navegador no permite guardar datos. Descarga una copia de la mercancía para no perderla.', true); return false; }
+  },
+  async put(col, rec) {
+    const { id, ...data } = rec;
+    if (this.mode === 'db') {
+      const prev = this.items[col].get(id);
+      this.items[col].set(id, rec); mercChanged();
+      try { await this.db.collection(col).doc(id).set(data); }
+      catch (e) { if (prev) this.items[col].set(id, prev); else this.items[col].delete(id); mercChanged(); throw e; }
+    } else {
+      this.local[col][id] = data; this.items[col].set(id, rec); this.persist(); mercChanged();
+    }
+  },
+  async remove(col, id) {
+    if (this.mode === 'db') {
+      const prev = this.items[col].get(id);
+      this.items[col].delete(id); mercChanged();
+      try { await this.db.collection(col).doc(id).delete(); }
+      catch (e) { if (prev) this.items[col].set(id, prev); mercChanged(); throw e; }
+    } else {
+      delete this.local[col][id]; this.items[col].delete(id); this.persist(); mercChanged();
+    }
+  },
+};
+
+/* ---------- Estado ---------- */
+const MUI = { chip: 'all', detailId: null };
+const MCHIPS = [
+  { k:'all', label:'Todas', fn: () => true },
+  { k:'stock', label:'Con stock', dot:COLOR.b, fn: l => l.left > 0 },
+  { k:'debt', label:'Con deuda pendiente', dot:COLOR.o, fn: l => l.debt > 0 },
+];
+
+/* ---------- Render ---------- */
+function renderMercBadges() {
+  const b = $('#mercStoreBadge');
+  if (Merc.mode === 'db') { b.className = 'badge ok'; b.lastElementChild.textContent = 'Guardado en la nube · privado'; b.title = 'Solo tú puedes leer y modificar estos datos.'; }
+  else if (Merc.mode === 'local') { b.className = 'badge warn'; b.lastElementChild.textContent = 'Guardado solo en este navegador'; b.title = 'Descarga una copia de la mercancía de vez en cuando para no perderla.'; }
+}
+function renderMercKpis() {
+  const t = mercTotals(mercRows());
+  const pct = t.total ? Math.round(t.recovered / t.total * 1000) / 10 : 0;
+  $('#mercKpis').innerHTML = `
+    <article class="kpi">
+      <div class="head"><span>Stock pendiente de vender</span><span class="ico b">${BOX}</span></div>
+      <div class="val c-b">${t.left} <span class="muted" style="font-size:.55em">uds</span></div>
+      <div class="sub">${t.units ? `${t.sold} vendidas de ${t.units} compradas` : 'Sin compras todavía'}</div>
+    </article>
+    <article class="kpi">
+      <div class="head"><span>Deuda con proveedores</span><span class="ico o">${ICON.clock}</span></div>
+      <div class="val c-o">${money(t.debt)}</div>
+      <div class="sub">${t.total ? `${money(t.paid)} pagados de ${money(t.total)}` : 'Sin deuda registrada'}</div>
+    </article>
+    <article class="kpi">
+      <div class="head"><span>Recuperado con ventas</span><span class="ico g">${ICON.wallet}</span></div>
+      <div class="val c-g">${money(t.recovered)}</div>
+      <div class="sub">${t.total ? `${pct.toLocaleString('es-ES')} % de ${money(t.total)} comprados` : 'Sin ventas registradas'}</div>
+    </article>
+    <article class="kpi">
+      <div class="head"><span>Pendiente de recuperar</span><span class="ico r">${ICON.euro}</span></div>
+      <div class="val">${money(t.toRecover)}</div>
+      <div class="sub">Lo que aún falta por cobrar de las compras</div>
+    </article>`;
+}
+function renderMercFilters() {
+  const rows = mercRows();
+  $('#mChips').innerHTML = MCHIPS.map(c => `<button class="chip" type="button" data-mchip="${c.k}" aria-pressed="${MUI.chip === c.k}">${c.dot ? `<span class="d" style="background:${c.dot}"></span>` : ''}${c.label}<span class="n">${rows.filter(r => c.fn(r.l)).length}</span></button>`).join('');
+}
+function mercCard(p, l) {
+  const s = l.left > 0 ? MST.stock : MST.agotada;
+  const soldPct = p.units ? Math.min(100, l.sold / p.units * 100) : 0;
+  const recPct = l.total ? Math.min(100, l.recovered / l.total * 100) : 0;
+  return `<article class="acard" data-merc="${esc(p.id)}" style="--st:${COLOR[s.t]}" tabindex="0" aria-label="Compra de ${esc(p.name)}">
+    <div class="ac-top"><span class="avatar t-${s.t}" aria-hidden="true">${esc(initials(p.name))}</span>
+      <div class="ac-id"><h3 title="${esc(p.name)}">${esc(p.name)}</h3><span class="dreason" title="${esc(p.supplier || '')}">${p.supplier ? esc(p.supplier) : '<span class="muted">Sin proveedor</span>'} · ${fmtDate(p.date)}</span></div>
+      <span class="pill-static t-${s.t}">${s.label}</span></div>
+    <div class="ac-money">
+      <div><span class="l">Unidades</span><b>${p.units}</b></div>
+      <div><span class="l">Precio ud.</span><b>${money(p.unitPrice)}</b></div>
+      <div class="tot"><span class="l">Total</span><b>${money(l.total)}</b></div>
+    </div>
+    <div class="split" aria-hidden="true"><span class="w" style="width:${soldPct}%"></span><span class="p" style="width:${100 - soldPct}%"></span></div>
+    <ul class="ac-info">
+      <li>${BOX}<span class="txt">${l.sold} vendidas · ${l.left} ${l.left === 1 ? 'queda' : 'quedan'} en stock</span></li>
+      <li>${ICON.wallet}<span class="txt">Recuperado ${money(l.recovered)} · por recuperar ${money(l.toRecover)}</span></li>
+      <li>${ICON.euro}<span class="txt ${l.debt ? 'c-o' : 'c-g'}">${l.debt ? `Debes ${money(l.debt)} al proveedor` : 'Proveedor pagado'}</span></li>
+    </ul>
+    <div class="ac-foot">
+      <button class="qbtn go" type="button" data-ma="sale" data-id="${esc(p.id)}" ${l.left ? '' : 'disabled'}>${small(BOX)}Registrar venta</button>
+      <button class="qbtn" type="button" data-ma="pay" data-id="${esc(p.id)}" ${l.debt ? '' : 'disabled'}>${small(ICON.euro)}Pago al proveedor</button>
+      <button class="qbtn" type="button" data-ma="edit" data-id="${esc(p.id)}">${small(ICON.edit)}Editar</button>
+      <button class="qbtn" type="button" data-ma="delete" data-id="${esc(p.id)}" aria-label="Eliminar la compra de ${esc(p.name)}">${small(ICON.trash)}</button>
+      <span class="dcov">${Math.round(recPct)} % recuperado</span>
+    </div>
+  </article>`;
+}
+function renderMercList() {
+  const area = $('#mArea');
+  if (Merc.mode === 'loading') return;
+  const all = mercRows(), total = all.length;
+  if (!total) {
+    area.innerHTML = `<div class="empty"><div class="badge-i">${BOX}</div><h3>Aún no hay compras de mercancía</h3>
+      <p>Registra cuántas unidades compraste y a cuánto. El total se calcula solo, y las ventas van descontando el stock.</p>
+      <div class="row"><button class="btn primary" type="button" data-ma="add">${ICON.plus}Registrar la primera compra</button></div></div>`;
+    $('#mResult').textContent = '0 compras';
+    return;
+  }
+  const chip = MCHIPS.find(c => c.k === MUI.chip) || MCHIPS[0];
+  const list = all.filter(r => chip.fn(r.l));
+  const t = mercTotals(all);
+  $('#mResult').textContent = `${total} ${total === 1 ? 'compra' : 'compras'} · ${t.left} uds en stock · ${money(t.debt)} de deuda con proveedores`;
+  if (!list.length) {
+    area.innerHTML = `<div class="empty"><h3>Ninguna compra coincide</h3><p>Quita el filtro para verlas todas.</p><div class="row"><button class="btn" type="button" data-ma="clear">Quitar filtros</button></div></div>`;
+    return;
+  }
+  area.innerHTML = `<div class="cards">${list.map(r => mercCard(r.p, r.l)).join('')}</div>`;
+}
+let mraf = 0;
+function mercChanged() {
+  if (mraf) return;
+  mraf = requestAnimationFrame(() => { mraf = 0; renderMercBadges(); renderMercKpis(); renderMercFilters(); renderMercList(); if (MUI.detailId) renderMercDetail(); });
+}
+
+/* ---------- Formulario de compra ---------- */
+function openMercForm(id, back) {
+  const editing = id ? Merc.items.purchases.get(id) : null;
+  const p = editing || { name: '', supplier: '', units: 0, unitPrice: 0, date: today(), notes: '' };
+  const s = editing ? mercStats().get(editing.id) : null;
+  const sold = s ? s.sold : 0, paid = s ? s.paid : 0;
+  const root = openLayer(`<form class="modal" id="mercForm" novalidate aria-labelledby="mfT">
+    <div class="modal-h"><h2 id="mfT">${editing ? 'Editar compra' : 'Registrar compra de mercancía'}</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b">
+      <div class="grid2">
+        <div class="fg full" data-f="name"><label for="mf-name">Producto</label><input class="field" id="mf-name" maxlength="80" autocomplete="off" placeholder="Ej.: Cargadores USB-C 20 W" value="${esc(p.name)}" autofocus><span class="err"></span></div>
+        <div class="fg" data-f="supplier"><label for="mf-supplier">Proveedor <span class="muted">(opcional)</span></label><input class="field" id="mf-supplier" maxlength="80" autocomplete="off" value="${esc(p.supplier || '')}"><span class="err"></span></div>
+        <div class="fg" data-f="date"><label for="mf-date">Fecha de compra</label><input class="field" type="date" id="mf-date" value="${esc(p.date || today())}"><span class="err"></span></div>
+        <div class="fg" data-f="units"><label for="mf-units">Número de unidades</label><input class="field" id="mf-units" inputmode="numeric" autocomplete="off" placeholder="0" value="${p.units || ''}"><span class="hint">${sold ? `Ya has vendido ${sold}: no puede ser menor.` : 'Cuántos cargadores compraste.'}</span><span class="err"></span></div>
+        <div class="fg" data-f="unitPrice"><label for="mf-price">Precio por unidad</label><div class="money-in"><input class="field" id="mf-price" inputmode="decimal" placeholder="0,00" value="${p.unitPrice ? moneyPlain(p.unitPrice) : ''}"><span>€</span></div><span class="err"></span></div>
+        <div class="fg full"><label for="mf-notes">Notas</label><textarea class="field" id="mf-notes" maxlength="2000" placeholder="Opcional">${esc(p.notes || '')}</textarea></div>
+      </div>
+      <div class="preview-total"><span>Precio total de la compra</span><b id="mf-total">—</b></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-close>Cancelar</button><button class="btn primary" type="submit">${editing ? 'Guardar cambios' : 'Registrar compra'}</button></div></form>`,
+    { onClose: back ? () => openMercDetail(id) : null });
+  const form = $('#mercForm', root);
+  const setErr = (f, msg) => { const g = form.querySelector(`[data-f="${f}"]`); g.classList.toggle('bad', !!msg); g.querySelector('.err').textContent = msg || ''; };
+  const preview = () => {
+    const u = unitsOf($('#mf-units').value), c = parseMoney($('#mf-price').value);
+    $('#mf-total').textContent = u && c !== null ? money(u * c) : '—';
+  };
+  preview();
+  form.addEventListener('input', e => { if (e.target.matches('#mf-units,#mf-price')) preview(); const g = e.target.closest('.fg.bad'); if (g) setErr(g.dataset.f, ''); });
+  form.addEventListener('click', e => { if (e.target.closest('[data-close]')) closeLayer(); });
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    $$('.fg.bad', form).forEach(g => setErr(g.dataset.f, ''));
+    const name = $('#mf-name').value.trim().replace(/\s+/g, ' ');
+    const units = unitsOf($('#mf-units').value), unitPrice = parseMoney($('#mf-price').value);
+    const date = DATE_RE.test($('#mf-date').value) ? $('#mf-date').value : today();
+    let bad = null;
+    const fail = (f, m) => { setErr(f, m); bad ||= f; };
+    if (!name) fail('name', 'Escribe el producto');
+    if (!units) fail('units', 'Indica un número entero de unidades, por ejemplo 150');
+    else if (units < sold) fail('units', `No puede ser menor que las ${sold} ya vendidas`);
+    if (unitPrice === null) fail('unitPrice', 'Importe no válido. Ej.: 12,00');
+    else if (!unitPrice) fail('unitPrice', 'Indica el precio de cada unidad');
+    if (units && unitPrice && units * unitPrice > MAX_CENTS) fail('unitPrice', 'El total es demasiado grande');
+    if (units && unitPrice && units * unitPrice < paid) fail('unitPrice', `El total no puede ser menor que lo ya pagado al proveedor (${money(paid)})`);
+    if (bad) { form.querySelector(`[data-f="${bad}"] .field`).focus(); return; }
+    const now = new Date().toISOString();
+    const rec = {
+      id: editing ? editing.id : rid('m'), name, supplier: $('#mf-supplier').value.trim().slice(0, 80), date, units, unitPrice,
+      notes: $('#mf-notes').value.trim(), createdAt: editing?.createdAt || now, updatedAt: now,
+    };
+    const btn = form.querySelector('[type="submit"]'); btn.disabled = true;
+    try {
+      await Merc.put('purchases', rec);
+      closeLayer();
+      toast(editing ? 'Compra actualizada' : `Compra registrada · ${money(units * unitPrice)}`);
+    } catch (err) { btn.disabled = false; toast(errMsg(err), true); }
+  });
+}
+
+/* ---------- Registrar venta (descuenta stock) ---------- */
+function openSaleForm(pid, back) {
+  const p = Merc.items.purchases.get(pid); if (!p) return;
+  const l = mLine(p, mercStats().get(pid) || { sold: 0, recovered: 0, paid: 0 });
+  if (!l.left) { toast('No quedan unidades en stock', true); return; }
+  const root = openLayer(`<form class="modal narrow" id="saleForm" novalidate aria-labelledby="svT">
+    <div class="modal-h"><h2 id="svT">Registrar venta</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b">
+      <p style="margin:0;color:var(--fg-2)"><b style="color:var(--fg)">${esc(p.name)}</b>: quedan <b>${l.left}</b> de ${p.units} unidades en stock.</p>
+      <div class="grid2">
+        <div class="fg" data-f="units"><label for="sv-units">Unidades vendidas</label><div class="row" style="gap:6px"><input class="field" id="sv-units" inputmode="numeric" autocomplete="off" placeholder="0" autofocus><button class="btn sm" type="button" data-fill-units="${l.left}">Todas</button></div><span class="err"></span></div>
+        <div class="fg" data-f="amount"><label for="sv-amount">Dinero cobrado</label><div class="money-in"><input class="field" id="sv-amount" inputmode="decimal" placeholder="0,00"><span>€</span></div><span class="err"></span></div>
+        <div class="fg"><label for="sv-date">Fecha de la venta</label><input class="field" type="date" id="sv-date" value="${today()}"></div>
+        <div class="fg"><label for="sv-note">Nota <span class="muted">(opcional)</span></label><input class="field" id="sv-note" maxlength="120" autocomplete="off" placeholder="Vinted, comprador…"></div>
+      </div>
+      <div class="preview-total"><span>Quedarán en stock</span><b id="sv-left">${l.left}</b></div>
+      <div class="preview-total"><span>Pendiente de recuperar</span><b id="sv-rec">${money(l.toRecover)}</b></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-close>Cancelar</button><button class="btn primary" type="submit">Guardar venta</button></div></form>`,
+    { onClose: back ? () => openMercDetail(pid) : null });
+  const form = $('#saleForm', root);
+  const setErr = (f, msg) => { const g = form.querySelector(`[data-f="${f}"]`); g.classList.toggle('bad', !!msg); g.querySelector('.err').textContent = msg || ''; };
+  const preview = () => {
+    const u = unitsOf($('#sv-units').value), a = parseMoney($('#sv-amount').value);
+    $('#sv-left').textContent = u && u <= l.left ? l.left - u : (u ? '—' : l.left);
+    $('#sv-rec').textContent = a === null ? '—' : money(Math.max(0, l.toRecover - a));
+  };
+  form.addEventListener('input', e => { if (e.target.matches('#sv-units,#sv-amount')) { setErr(e.target.closest('.fg').dataset.f, ''); preview(); } });
+  form.addEventListener('click', e => {
+    if (e.target.closest('[data-close]')) return closeLayer();
+    const f = e.target.closest('[data-fill-units]');
+    if (f) { $('#sv-units').value = f.dataset.fillUnits; setErr('units', ''); preview(); $('#sv-amount').focus(); }
+  });
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const cur = Merc.items.purchases.get(pid); if (!cur) return closeLayer();
+    const left = mLine(cur, mercStats().get(pid) || { sold: 0, recovered: 0, paid: 0 }).left;
+    const units = unitsOf($('#sv-units').value), amount = parseMoney($('#sv-amount').value);
+    if (!units) { setErr('units', 'Indica cuántas unidades has vendido'); return $('#sv-units').focus(); }
+    if (units > left) { setErr('units', `Solo quedan ${left} en stock`); return $('#sv-units').focus(); }
+    if (amount === null) { setErr('amount', 'Importe no válido. Ej.: 25,00'); return $('#sv-amount').focus(); }
+    if (!amount) { setErr('amount', 'Indica cuánto has cobrado'); return $('#sv-amount').focus(); }
+    const date = DATE_RE.test($('#sv-date').value) ? $('#sv-date').value : today();
+    const rec = { id: rid('sv'), purchaseId: pid, units, amount, date, note: $('#sv-note').value.trim(), at: new Date().toISOString() };
+    const btn = form.querySelector('[type="submit"]'); btn.disabled = true;
+    try {
+      await Merc.put('stockSales', rec);
+      closeLayer();
+      toast(`Venta registrada · quedan ${left - units} en stock`);
+    } catch (err) { btn.disabled = false; toast(errMsg(err), true); }
+  });
+}
+
+/* ---------- Pago al proveedor ---------- */
+function openPayForm(pid, back) {
+  const p = Merc.items.purchases.get(pid); if (!p) return;
+  const l = mLine(p, mercStats().get(pid) || { sold: 0, recovered: 0, paid: 0 });
+  if (!l.debt) { toast('Ya no debes nada a este proveedor', true); return; }
+  const half = Math.round(l.debt / 2);
+  const root = openLayer(`<form class="modal narrow" id="payMForm" novalidate aria-labelledby="pmT">
+    <div class="modal-h"><h2 id="pmT">Pago al proveedor</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b">
+      <p style="margin:0;color:var(--fg-2)">Debes <b class="c-o">${money(l.debt)}</b> de ${money(l.total)} por «<b style="color:var(--fg)">${esc(p.name)}</b>»${p.supplier ? ` a ${esc(p.supplier)}` : ''}.</p>
+      <div class="fg" data-f="amount"><label for="pm-amount">Cantidad que pagas</label><div class="money-in"><input class="field" id="pm-amount" inputmode="decimal" placeholder="0,00" autocomplete="off" autofocus><span>€</span></div><span class="err"></span></div>
+      <div class="row"><button class="btn sm" type="button" data-pfill="${l.debt}">Todo (${money(l.debt)})</button>${l.debt >= 2 ? `<button class="btn sm ghost" type="button" data-pfill="${half}">La mitad (${money(half)})</button>` : ''}</div>
+      <div class="grid2">
+        <div class="fg"><label for="pm-date">Fecha del pago</label><input class="field" type="date" id="pm-date" value="${today()}"></div>
+        <div class="fg"><label for="pm-note">Nota <span class="muted">(opcional)</span></label><input class="field" id="pm-note" maxlength="120" autocomplete="off" placeholder="Transferencia, efectivo…"></div>
+      </div>
+      <div class="preview-total"><span>Quedará pendiente con el proveedor</span><b id="pm-left">${money(l.debt)}</b></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-close>Cancelar</button><button class="btn primary" type="submit">Guardar pago</button></div></form>`,
+    { onClose: back ? () => openMercDetail(pid) : null });
+  const form = $('#payMForm', root), g = form.querySelector('[data-f="amount"]');
+  const setErr = m => { g.classList.toggle('bad', !!m); g.querySelector('.err').textContent = m || ''; };
+  const preview = () => { const v = parseMoney($('#pm-amount').value); $('#pm-left').textContent = v === null ? '—' : money(Math.max(0, l.debt - v)); };
+  form.addEventListener('input', e => { if (e.target.id === 'pm-amount') { setErr(''); preview(); } });
+  form.addEventListener('click', e => {
+    if (e.target.closest('[data-close]')) return closeLayer();
+    const f = e.target.closest('[data-pfill]');
+    if (f) { $('#pm-amount').value = moneyPlain(Number(f.dataset.pfill)); setErr(''); preview(); $('#pm-amount').focus(); }
+  });
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const cur = Merc.items.purchases.get(pid); if (!cur) return closeLayer();
+    const debt = mLine(cur, mercStats().get(pid) || { sold: 0, recovered: 0, paid: 0 }).debt;
+    const amount = parseMoney($('#pm-amount').value);
+    if (amount === null) { setErr('Importe no válido. Ej.: 100,00'); return $('#pm-amount').focus(); }
+    if (!amount) { setErr('Indica cuánto pagas'); return $('#pm-amount').focus(); }
+    if (amount > debt) { setErr(`Solo debes ${money(debt)}`); return $('#pm-amount').focus(); }
+    const date = DATE_RE.test($('#pm-date').value) ? $('#pm-date').value : today();
+    const rec = { id: rid('pp'), purchaseId: pid, amount, date, note: $('#pm-note').value.trim(), at: new Date().toISOString() };
+    const btn = form.querySelector('[type="submit"]'); btn.disabled = true;
+    try {
+      await Merc.put('supplierPayments', rec);
+      closeLayer();
+      toast(debt - amount ? `Pago registrado · quedan ${money(debt - amount)}` : 'Proveedor pagado');
+    } catch (err) { btn.disabled = false; toast(errMsg(err), true); }
+  });
+}
+
+/* ---------- Ficha de la compra ---------- */
+function openMercDetail(id) {
+  if (!Merc.items.purchases.has(id)) return;
+  MUI.detailId = id;
+  const root = openLayer(`<aside class="drawer" id="mercDrawer" role="dialog" aria-modal="true" aria-labelledby="mdT"></aside>`, { drawer: true, onClose: () => { MUI.detailId = null; } });
+  renderMercDetail();
+  $('#mercDrawer').addEventListener('click', e => {
+    const b = e.target.closest('[data-ma],[data-close]'); if (!b) return;
+    if (b.hasAttribute('data-close')) return closeLayer();
+    const cur = MUI.detailId, act = b.dataset.ma;
+    if (act === 'sale') openSaleForm(cur, true);
+    if (act === 'pay') openPayForm(cur, true);
+    if (act === 'edit') openMercForm(cur, true);
+    if (act === 'delete') confirmMercDelete(cur, true);
+    if (act === 'del-rec') confirmMercRecordDelete(b.dataset.kind, b.dataset.rid, cur);
+  });
+  $('#mercDrawer [data-close]')?.focus();
+  return root;
+}
+function mercRecordItem(r, sale) {
+  const kind = sale ? 'stockSales' : 'supplierPayments';
+  const head = sale
+    ? `<b class="c-g">${r.units} ${r.units === 1 ? 'unidad' : 'unidades'} · +${money(r.amount)}</b>`
+    : `<b class="c-o">−${money(r.amount)}</b>`;
+  return `<li><div class="pay-row"><div>${head} <span class="when">${fmtDate(r.date)}</span>${r.note ? `<div class="chg">${esc(r.note)}</div>` : ''}</div>
+    <button class="icon-btn sm del" type="button" data-ma="del-rec" data-kind="${kind}" data-rid="${esc(r.id)}" aria-label="Eliminar el registro del ${fmtDate(r.date)}" title="Eliminar">${ICON.trash}</button></div></li>`;
+}
+function renderMercDetail() {
+  const el = $('#mercDrawer'); if (!el) return;
+  const p = Merc.items.purchases.get(MUI.detailId);
+  if (!p) { closeLayer(); return; }
+  const l = mLine(p, mercStats().get(p.id) || { sold: 0, recovered: 0, paid: 0 });
+  const st = l.left > 0 ? MST.stock : MST.agotada;
+  const sales = mercRecords('stockSales', p.id), pays = mercRecords('supplierPayments', p.id);
+  const soldPct = p.units ? Math.min(100, l.sold / p.units * 100) : 0;
+  const recPct = l.total ? Math.min(100, l.recovered / l.total * 100) : 0;
+  const scroll = el.scrollTop;
+  el.innerHTML = `
+    <div class="modal-h"><h2 id="mdT">Ficha de la compra</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b">
+      <div class="d-hero"><span class="avatar t-${st.t}" aria-hidden="true">${esc(initials(p.name))}</span><div style="min-width:0;display:flex;flex-direction:column;gap:6px">
+        <p class="nm">${esc(p.name)}</p>${p.supplier ? `<span style="color:var(--fg-2)">${esc(p.supplier)}</span>` : ''}
+        <div class="row" style="gap:6px"><span class="pill-static t-${st.t}">${st.label}</span></div></div></div>
+      <div class="figs">
+        <div class="fig total"><span class="l">Stock disponible</span><span class="v ${l.left ? 'c-b' : 'c-g'}">${l.left} de ${p.units} uds</span><div class="split" aria-hidden="true"><span class="w" style="width:${soldPct}%"></span><span class="p" style="width:${100 - soldPct}%"></span></div><span class="l">${l.sold} vendidas</span></div>
+        <div class="fig"><span class="l">Deuda con el proveedor</span><span class="v ${l.debt ? 'c-o' : 'c-g'}">${money(l.debt)}</span><span class="l">Pagado ${money(l.paid)} de ${money(l.total)}</span></div>
+        <div class="fig"><span class="l">Recuperado con ventas</span><span class="v c-g">${money(l.recovered)}</span><span class="l">Falta ${money(l.toRecover)} · ${Math.round(recPct)} %</span></div>
+      </div>
+      <div class="d-sec"><h4>Datos</h4>
+        <dl class="kv"><dt>Fecha de compra</dt><dd class="num">${fmtDate(p.date)}</dd>
+        <dt>Unidades compradas</dt><dd class="num">${p.units}</dd>
+        <dt>Precio por unidad</dt><dd class="num">${money(p.unitPrice)}</dd>
+        <dt>Precio total</dt><dd class="num">${money(l.total)}</dd>
+        <dt>Última modificación</dt><dd class="num">${p.updatedAt ? esc(fmtDateTime(p.updatedAt)) : '—'}</dd></dl>
+      </div>
+      <div class="d-sec"><h4>Ventas (${sales.length})</h4>
+        ${sales.length ? `<ul class="timeline">${sales.map(r => mercRecordItem(r, true)).join('')}</ul>`
+          : '<p class="muted" style="margin:0">Todavía no hay ventas. Usa «Registrar venta» cuando vendas unidades.</p>'}
+      </div>
+      <div class="d-sec"><h4>Pagos al proveedor (${pays.length})</h4>
+        ${pays.length ? `<ul class="timeline">${pays.map(r => mercRecordItem(r, false)).join('')}</ul>`
+          : '<p class="muted" style="margin:0">Todavía no has pagado al proveedor. Usa «Pago al proveedor» cada vez que pagues.</p>'}
+      </div>
+      <div class="d-sec"><h4>Notas</h4>${p.notes ? `<div class="note-box">${esc(p.notes)}</div>` : '<p class="muted" style="margin:0">Sin notas.</p>'}</div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-ma="delete" style="color:var(--red)">${ICON.trash}Eliminar</button><button class="btn" type="button" data-ma="edit">${ICON.edit}Editar</button><button class="btn" type="button" data-ma="pay" ${l.debt ? '' : 'disabled'}>${ICON.euro}Pago al proveedor</button><button class="btn primary" type="button" data-ma="sale" ${l.left ? '' : 'disabled'}>${small(BOX)}Registrar venta</button></div>`;
+  el.scrollTop = scroll;
+}
+
+/* ---------- Eliminar ---------- */
+function confirmMercDelete(pid, back) {
+  const p = Merc.items.purchases.get(pid); if (!p) return;
+  const nS = mercRecords('stockSales', pid).length, nP = mercRecords('supplierPayments', pid).length;
+  const root = openLayer(`<div class="modal narrow" role="alertdialog" aria-labelledby="mdelT" aria-describedby="mdelD">
+    <div class="modal-h"><h2 id="mdelT">Eliminar compra</h2></div>
+    <div class="modal-b"><p id="mdelD" style="margin:0">Vas a eliminar <b>${esc(p.name)}</b> (${p.units} uds, ${money((p.units || 0) * (p.unitPrice || 0))}) junto con sus ${nS} ${nS === 1 ? 'venta' : 'ventas'} y ${nP} ${nP === 1 ? 'pago al proveedor' : 'pagos al proveedor'}. Esta acción no se puede deshacer.</p></div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-c="no" autofocus>Cancelar</button><button class="btn danger" type="button" data-c="yes">Eliminar definitivamente</button></div></div>`,
+    { onClose: back ? () => openMercDetail(pid) : null });
+  root.addEventListener('click', async e => {
+    const c = e.target.closest('[data-c]')?.dataset.c; if (!c) return;
+    if (c === 'no') return closeLayer();
+    e.target.disabled = true;
+    try {
+      for (const r of mercRecords('stockSales', pid)) await Merc.remove('stockSales', r.id);
+      for (const r of mercRecords('supplierPayments', pid)) await Merc.remove('supplierPayments', r.id);
+      await Merc.remove('purchases', pid);
+      closeLayer(); toast('Compra eliminada');
+    } catch (err) { e.target.disabled = false; toast(errMsg(err), true); }
+  });
+}
+function confirmMercRecordDelete(kind, rid, pid) {
+  const r = Merc.items[kind].get(rid); if (!r) return;
+  const sale = kind === 'stockSales';
+  const root = openLayer(`<div class="modal narrow" role="alertdialog" aria-labelledby="mrdT">
+    <div class="modal-h"><h2 id="mrdT">${sale ? 'Eliminar venta' : 'Eliminar pago'}</h2></div>
+    <div class="modal-b"><p style="margin:0">${sale
+      ? `Las ${r.units} ${r.units === 1 ? 'unidad volverá' : 'unidades volverán'} al stock y se quitarán ${money(r.amount)} de lo recuperado.`
+      : `Se quitará el pago de ${money(r.amount)} al proveedor y la deuda volverá a subir en esa cantidad.`}</p></div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-c="no" autofocus>Cancelar</button><button class="btn danger" type="button" data-c="yes">${sale ? 'Eliminar venta' : 'Eliminar pago'}</button></div></div>`,
+    { onClose: () => openMercDetail(pid) });
+  root.addEventListener('click', async e => {
+    const c = e.target.closest('[data-c]')?.dataset.c; if (!c) return;
+    if (c === 'no') return closeLayer();
+    e.target.disabled = true;
+    try { await Merc.remove(kind, rid); closeLayer(); toast(sale ? 'Venta eliminada' : 'Pago eliminado'); }
+    catch (err) { e.target.disabled = false; toast(errMsg(err), true); }
+  });
+}
+
+/* ---------- Copia de la mercancía (aparte de VINTED y de DEUDAS) ---------- */
+function cleanPurchase(x, now) {
+  return {
+    id: x.id, name: txt(x.name, 80).trim().replace(/\s+/g, ' '), supplier: txt(x.supplier, 80).trim(),
+    date: DATE_RE.test(x.date) ? x.date : today(), units: Number.isSafeInteger(x.units) && x.units > 0 && x.units <= MAX_UNITS ? x.units : 0,
+    unitPrice: cents(x.unitPrice), notes: txt(x.notes, 2000), createdAt: txt(x.createdAt, 40) || now, updatedAt: txt(x.updatedAt, 40) || now,
+  };
+}
+function cleanRecord(x, now, sale) {
+  const base = { id: x.id, purchaseId: x.purchaseId, date: DATE_RE.test(x.date) ? x.date : today(), amount: cents(x.amount), note: txt(x.note, 120), at: txt(x.at, 40) || now };
+  return sale ? { ...base, units: Number.isSafeInteger(x.units) && x.units > 0 && x.units <= MAX_UNITS ? x.units : 0 } : base;
+}
+function openMercBackup() {
+  const n = Merc.items.purchases.size;
+  const root = openLayer(`<div class="modal narrow" role="dialog" aria-labelledby="mbkT">
+    <div class="modal-h"><h2 id="mbkT">Copia de la mercancía</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b">
+      <p style="margin:0;color:var(--fg-2)">Descarga las compras con sus ventas y pagos al proveedor, o restáuralas desde una copia anterior. Las cuentas de VINTED y las deudas tienen su propia copia.</p>
+      <div class="alert o">${ICON.shield}<p>La copia incluye nombres, precios y notas sin cifrar. Guárdala en un lugar seguro.</p></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn" type="button" data-bk="restore">Restaurar desde archivo</button>
+      <button class="btn primary" type="button" data-bk="save" ${n ? '' : 'disabled'}>Descargar copia</button>
+      <input type="file" id="mbkFile" accept=".json,application/json" hidden>
+    </div></div>`);
+  root.addEventListener('click', e => {
+    if (e.target.closest('[data-close]')) return closeLayer();
+    const b = e.target.closest('[data-bk]'); if (!b) return;
+    if (b.dataset.bk === 'restore') $('#mbkFile', root).click();
+    if (b.dataset.bk === 'save') saveMercBackup(b);
+  });
+  $('#mbkFile', root).addEventListener('change', e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) readMercBackup(f); });
+}
+async function saveMercBackup(btn) {
+  btn.disabled = true;
+  const text = JSON.stringify({
+    app: 'vinted-control-mercancia', format: 1, exportedAt: new Date().toISOString(),
+    purchases: [...Merc.items.purchases.values()], sales: [...Merc.items.stockSales.values()], payments: [...Merc.items.supplierPayments.values()],
+  }, null, 2);
+  const filename = `copia-mercancia-${today()}.json`;
+  let dl = null;
+  try { dl = window.claude && await window.claude.use('downloads'); } catch { dl = null; }
+  if (dl) {
+    try { await dl.save({ filename, data: text }); btn.disabled = false; toast('Copia guardada'); return; }
+    catch (e) {
+      if (e && e.code === 'declined') { btn.disabled = false; return; }
+      if (e && e.code === 'rate_limited') { btn.disabled = false; toast('Ya hay una descarga pendiente de confirmar', true); return; }
+    }
+  } else {
+    try {
+      const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+      const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      btn.disabled = false; toast('Copia descargada'); return;
+    } catch {}
+  }
+  const root = openLayer(`<div class="modal"><div class="modal-h"><h2>Copia de la mercancía</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b"><p style="margin:0;color:var(--fg-2)">La descarga directa no está disponible aquí. Copia el contenido y guárdalo en un archivo <span class="mono">.json</span>.</p><textarea class="field mono" id="mbkOut" rows="10" readonly></textarea></div>
+    <div class="modal-f"><button class="btn primary" type="button" id="mbkCopy">${ICON.copy}Copiar</button></div></div>`);
+  $('#mbkOut', root).value = text;
+  root.addEventListener('click', async e => {
+    if (e.target.closest('[data-close]')) return closeLayer();
+    if (e.target.closest('#mbkCopy')) {
+      try { await navigator.clipboard.writeText($('#mbkOut').value); toast('Copia copiada'); }
+      catch { $('#mbkOut').select(); toast('Texto seleccionado: cópialo con Ctrl+C'); }
+    }
+  });
+}
+function readMercBackup(file) {
+  if (file.size > 20 * 1024 * 1024) { toast('El archivo es demasiado grande (máx. 20 MB)', true); return; }
+  const rd = new FileReader();
+  rd.onload = () => {
+    let data = null;
+    try { data = JSON.parse(String(rd.result || '')); } catch { data = null; }
+    if (!data || data.app !== 'vinted-control-mercancia' || !Array.isArray(data.purchases)) { toast('Ese archivo no es una copia de la mercancía', true); return; }
+    const now = new Date().toISOString();
+    const purchases = data.purchases.filter(x => x && typeof x === 'object' && ID_RE.test(String(x.id || '')) && typeof x.name === 'string' && x.name.trim() && unitsOf(x.units) && cents(x.unitPrice) > 0).map(x => cleanPurchase(x, now));
+    const ok = new Set(purchases.map(p => p.id));
+    const keepChild = x => x && typeof x === 'object' && ID_RE.test(String(x.id || '')) && (ok.has(x.purchaseId) || Merc.items.purchases.has(x.purchaseId));
+    const sales = (Array.isArray(data.sales) ? data.sales : []).filter(x => keepChild(x) && Number.isSafeInteger(x.units) && x.units > 0 && cents(x.amount) > 0).map(x => cleanRecord(x, now, true));
+    const pays = (Array.isArray(data.payments) ? data.payments : []).filter(x => keepChild(x) && cents(x.amount) > 0).map(x => cleanRecord(x, now, false));
+    const skipped = data.purchases.length - purchases.length;
+    const root = openLayer(`<div class="modal narrow" role="alertdialog" aria-labelledby="mrsT">
+      <div class="modal-h"><h2 id="mrsT">Restaurar mercancía</h2></div>
+      <div class="modal-b">
+        <p style="margin:0">Se restaurarán <b>${purchases.length}</b> ${purchases.length === 1 ? 'compra' : 'compras'}, <b>${sales.length}</b> ${sales.length === 1 ? 'venta' : 'ventas'} y <b>${pays.length}</b> ${pays.length === 1 ? 'pago' : 'pagos'} de la copia del ${esc(fmtDateTime(data.exportedAt))}. Los registros con el mismo identificador se sustituyen y los demás no se borran. Las cuentas de VINTED y las deudas no se tocan.</p>
+        ${skipped ? `<div class="alert o"><p>${skipped} ${skipped === 1 ? 'compra no es válida y se omitirá' : 'compras no son válidas y se omitirán'}.</p></div>` : ''}
+      </div>
+      <div class="modal-f"><button class="btn ghost" type="button" data-c="no">Cancelar</button><button class="btn primary" type="button" data-c="yes" ${purchases.length ? '' : 'disabled'}>Restaurar</button></div></div>`);
+    root.addEventListener('click', async e => {
+      const c = e.target.closest('[data-c]'); if (!c) return;
+      if (c.dataset.c === 'no') return closeLayer();
+      c.disabled = true;
+      const all = [...purchases.map(x => ['purchases', x]), ...sales.map(x => ['stockSales', x]), ...pays.map(x => ['supplierPayments', x])];
+      let done = 0;
+      try {
+        for (const [col, x] of all) { await Merc.put(col, x); done++; c.textContent = `Restaurando… ${done}/${all.length}`; }
+        closeLayer(); toast(`Mercancía restaurada: ${done} registros`);
+      } catch (err) { c.disabled = false; c.textContent = 'Restaurar'; toast(`Se restauraron ${done} de ${all.length}. ${errMsg(err)}`, true); }
+    });
+  };
+  rd.onerror = () => toast('No se pudo leer el archivo', true);
+  rd.readAsText(file, 'utf-8');
+}
+
+/* ---------- Eventos de MERCANCÍA ---------- */
+$('#btnMercAdd').addEventListener('click', () => openMercForm());
+$('#btnMercBackup').addEventListener('click', openMercBackup);
+$('#mChips').addEventListener('click', e => { const c = e.target.closest('[data-mchip]'); if (c) { MUI.chip = c.dataset.mchip; mercChanged(); } });
+$('#mArea').addEventListener('click', e => {
+  const b = e.target.closest('[data-ma]');
+  if (b) {
+    const act = b.dataset.ma, id = b.dataset.id;
+    if (act === 'add') openMercForm();
+    else if (act === 'clear') { MUI.chip = 'all'; mercChanged(); }
+    else if (act === 'sale') openSaleForm(id);
+    else if (act === 'pay') openPayForm(id);
+    else if (act === 'edit') openMercForm(id);
+    else if (act === 'delete') confirmMercDelete(id);
+    return;
+  }
+  if (e.target.closest('select,button,a,input')) return;
+  const card = e.target.closest('[data-merc]'); if (card) openMercDetail(card.dataset.merc);
+});
+$('#mArea').addEventListener('keydown', e => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-merc]')) { e.preventDefault(); openMercDetail(e.target.dataset.merc); }
+});
+renderMercKpis(); renderMercFilters();
+
 renderKpis(); renderFilters();
-Store.init().finally(() => Debts.init());
+Store.init().finally(() => { Debts.init(); Merc.init(); });
 })();
 </script>
 
