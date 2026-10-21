@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
+<script src="config.js"></script>
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
 </head>
 <body>
@@ -615,6 +616,7 @@ const Store = {
   async init() {
     let db = null;
     try { if (window.claude && typeof window.claude.use === 'function') db = await window.claude.use('db'); } catch { db = null; }
+    if (!db) db = await Cloud.connect();
     if (db && await this.tryDb(db)) return;
     this.useLocal();
   },
@@ -714,6 +716,253 @@ const Store = {
       if (this.mode === 'db') await this.db.doc('settings/main').set(this.settings);
       else { this.local.settings = this.settings; this.persistLocal(); }
     } catch (e) { this.settings = prev; changed(); throw e; }
+  },
+};
+
+/* ---------- Sincronización entre dispositivos (Supabase) ----------
+   Solo se activa si config.js trae la URL y la clave pública del proyecto. Ofrece a Store y a DEUDAS
+   la misma interfaz que la base de datos del artefacto (collection/doc, get/set/delete, onSnapshot),
+   así el resto de la app no cambia. Cada fila de la tabla «items» pertenece a un usuario y las reglas
+   RLS de Supabase impiden que nadie más la lea o la modifique. */
+const SB_LIB = { src: 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.89.0/dist/umd/supabase.js', integrity: 'sha384-sddcMIX7Ar6auuLM3TihDPYO6uOeMYsjtmZKfi8V83eeqdFWdnpAtk90odEwbXjh' };
+const SB_TABLE = 'items';
+const SB_LIVE = ['accounts', 'settings', 'debts'];
+const SB_LOCAL = { 'vinted-control.v1': ['accounts', 'history', 'settings'], 'vinted-control.debts.v1': ['debts'] };
+const Cloud = {
+  client: null, user: null, db: null,
+  cache: new Map(), loaded: new Map(), colSubs: new Map(), docSubs: new Map(), timers: new Map(),
+  config() {
+    const c = window.CONTROLVINTED_SUPABASE;
+    if (c && this.isSecret(String(c.anonKey || ''))) { toast('config.js tiene una clave secreta de Supabase. Cámbiala por la clave pública (publishable o anon).', true); return null; }
+    return c && /^https:\/\/[^\s/]+$/.test(String(c.url || '').replace(/\/+$/, '')) && String(c.anonKey || '').length > 20 ? { url: String(c.url).replace(/\/+$/, ''), key: String(c.anonKey) } : null;
+  },
+  isSecret(k) {
+    if (k.startsWith('sb_secret_')) return true;
+    try { return JSON.parse(atob(k.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).role === 'service_role'; } catch { return false; }
+  },
+  loadLib() {
+    if (window.supabase && window.supabase.createClient) return Promise.resolve(true);
+    return new Promise(resolve => {
+      const s = Object.assign(document.createElement('script'), { src: SB_LIB.src, integrity: SB_LIB.integrity, crossOrigin: 'anonymous' });
+      s.onload = () => resolve(!!(window.supabase && window.supabase.createClient));
+      s.onerror = () => resolve(false);
+      document.head.appendChild(s);
+    });
+  },
+  /** Devuelve la interfaz de datos en la nube, o null para seguir guardando solo en este navegador. */
+  async connect() {
+    const cfg = this.config(); if (!cfg) return null;
+    for (;;) {
+      if (!await this.loadLib()) { if (await this.offline('No se pudo cargar el conector de la nube.')) continue; return null; }
+      try {
+        this.client ||= window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'controlvinted-auth' } });
+        const { data } = await this.client.auth.getSession();
+        this.user = data && data.session ? data.session.user : null;
+        if (!this.user) { this.user = await this.login(); if (!this.user) return null; }
+        for (const c of SB_LIVE) await this.load(c);
+        break;
+      } catch (e) {
+        if (await this.offline('No se pudo conectar con la nube. Comprueba la conexión a internet.')) continue;
+        return null;
+      }
+    }
+    this.listen();
+    await this.migrate();
+    this.db = this.api();
+    this.client.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_OUT') location.reload(); });
+    ['#storeBadge', '#debtStoreBadge'].forEach(sel => { const b = $(sel); if (!b) return; b.style.cursor = 'pointer'; b.addEventListener('click', () => this.openAccount()); });
+    return this.db;
+  },
+  login() {
+    return new Promise(resolve => {
+      let done = false;
+      const show = (msg = '') => {
+        const root = openLayer(`<form class="modal narrow" id="sbLogin" novalidate aria-labelledby="sbT">
+          <div class="modal-h"><h2 id="sbT">Entrar</h2></div>
+          <div class="modal-b">
+            <p style="margin:0;color:var(--fg-2)">Inicia sesión para ver tus cuentas y deudas sincronizadas en todos tus dispositivos. Solo hay que hacerlo una vez en cada uno.</p>
+            <div class="fg"><label for="sb-email">Correo</label><input class="field" id="sb-email" type="email" autocomplete="username" autofocus></div>
+            <div class="fg"><label for="sb-pass">Contraseña</label><div class="pw"><input class="field" id="sb-pass" type="password" autocomplete="current-password"><button type="button" data-pwtoggle aria-label="Mostrar u ocultar la contraseña">${ICON.eye}</button></div></div>
+            <div class="alert r" id="sbErr" ${msg ? '' : 'hidden'}><p>${esc(msg)}</p></div>
+            <button class="link-btn" type="button" data-sb="local" style="align-self:flex-start">Usar sin sincronizar (solo este navegador)</button>
+          </div>
+          <div class="modal-f"><button class="btn primary" type="submit">Entrar</button></div></form>`, { onClose: () => { if (!done) setTimeout(() => show()); } });
+        const form = $('#sbLogin', root);
+        form.addEventListener('click', e => {
+          const t = e.target.closest('[data-pwtoggle]');
+          if (t) { const i = $('#sb-pass'); i.type = i.type === 'password' ? 'text' : 'password'; t.innerHTML = i.type === 'password' ? ICON.eye : ICON.eyeOff; }
+          if (e.target.closest('[data-sb="local"]')) { done = true; closeLayer(); resolve(null); }
+        });
+        form.addEventListener('submit', async e => {
+          e.preventDefault();
+          const email = $('#sb-email').value.trim(), password = $('#sb-pass').value;
+          const err = m => { const a = $('#sbErr'); a.hidden = false; a.firstElementChild.textContent = m; };
+          if (!email || !password) return err('Escribe tu correo y tu contraseña.');
+          const btn = form.querySelector('[type="submit"]'); btn.disabled = true; btn.textContent = 'Entrando…';
+          try {
+            const { data, error } = await this.client.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+            done = true; closeLayer(); resolve(data.user);
+          } catch (e2) {
+            btn.disabled = false; btn.textContent = 'Entrar';
+            err(e2 && e2.status === 400 ? 'Correo o contraseña incorrectos.' : 'No se pudo conectar. Comprueba la conexión e inténtalo de nuevo.');
+          }
+        });
+      };
+      show();
+    });
+  },
+  /** Error de conexión: true = reintentar, false = seguir solo en este navegador. */
+  offline(msg) {
+    return new Promise(resolve => {
+      let done = false;
+      const root = openLayer(`<div class="modal narrow" role="alertdialog" aria-labelledby="sbOffT">
+        <div class="modal-h"><h2 id="sbOffT">Sin conexión con la nube</h2></div>
+        <div class="modal-b"><p style="margin:0">${esc(msg)}</p><p class="muted" style="margin:0;font-size:12.5px">Si sigues sin sincronizar, lo que cambies ahora se queda solo en este navegador.</p></div>
+        <div class="modal-f"><button class="btn ghost" type="button" data-c="local">Seguir sin sincronizar</button><button class="btn primary" type="button" data-c="retry" autofocus>Reintentar</button></div></div>`,
+        { onClose: () => { if (!done) { done = true; resolve(true); } } });
+      root.addEventListener('click', e => { const c = e.target.closest('[data-c]'); if (!c) return; done = true; closeLayer(); resolve(c.dataset.c === 'retry'); });
+    });
+  },
+  openAccount() {
+    const root = openLayer(`<div class="modal narrow" role="dialog" aria-labelledby="sbAccT">
+      <div class="modal-h"><h2 id="sbAccT">Sincronización</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+      <div class="modal-b"><div class="alert g">${ICON.shield}<p>Sincronizado con la nube como <b>${esc(this.user.email || '')}</b>. Los cambios aparecen solos en tus otros dispositivos.</p></div></div>
+      <div class="modal-f"><button class="btn ghost" type="button" data-c="out">Cerrar sesión en este dispositivo</button><button class="btn primary" type="button" data-close>Listo</button></div></div>`);
+    root.addEventListener('click', async e => {
+      if (e.target.closest('[data-close]')) return closeLayer();
+      if (e.target.closest('[data-c="out"]')) { e.target.disabled = true; await this.client.auth.signOut(); location.reload(); }
+    });
+  },
+  async fetchAll(col) {
+    const rows = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await this.client.from(SB_TABLE).select('id,data').eq('collection', col).order('id').range(from, from + 999);
+      if (error) throw error;
+      rows.push(...data);
+      if (data.length < 1000) return rows;
+    }
+  },
+  async load(col) {
+    const rows = await this.fetchAll(col);
+    this.cache.set(col, new Map(rows.map(r => [r.id, r.data])));
+    this.loaded.set(col, true);
+    this.emit(col);
+  },
+  listen() {
+    let joined = false;
+    const onChange = p => {
+      const row = p.eventType === 'DELETE' ? p.old : p.new;
+      if (!row || row.user_id !== this.user.id || !this.cache.has(row.collection)) return;
+      if (p.eventType === 'DELETE') this.cache.get(row.collection).delete(row.id);
+      else this.cache.get(row.collection).set(row.id, row.data);
+      this.emit(row.collection);
+    };
+    this.client.channel('items-' + this.user.id)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: SB_TABLE, filter: `user_id=eq.${this.user.id}` }, onChange)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: SB_TABLE, filter: `user_id=eq.${this.user.id}` }, onChange)
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: SB_TABLE }, onChange) // los borrados no admiten filtro
+      .subscribe(st => {
+        if (st !== 'SUBSCRIBED') return;
+        if (joined) this.refresh(); // al reconectar, recupera lo que haya cambiado mientras tanto
+        joined = true;
+      });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') this.refresh(); });
+    window.addEventListener('online', () => this.refresh());
+  },
+  refresh() {
+    clearTimeout(this.refreshTimer);
+    this.refreshTimer = setTimeout(() => SB_LIVE.forEach(c => this.load(c).catch(() => {})), 300);
+  },
+  emit(col) {
+    clearTimeout(this.timers.get(col));
+    this.timers.set(col, setTimeout(() => {
+      const m = this.cache.get(col) || new Map();
+      const snap = { docs: [...m].map(([id, data]) => ({ id, data: () => data })) };
+      (this.colSubs.get(col) || new Set()).forEach(s => s(snap));
+      for (const [path, set] of this.docSubs) {
+        const [c, id] = path.split('/'); if (c !== col) continue;
+        const data = m.get(id);
+        set.forEach(s => s({ id, exists: data !== undefined, data: () => data }));
+      }
+    }, 30));
+  },
+  async put(col, id, data) {
+    const { error } = await this.client.from(SB_TABLE).upsert({ user_id: this.user.id, collection: col, id, data, updated_at: new Date().toISOString() }, { onConflict: 'user_id,collection,id' });
+    if (error) throw error;
+    if (this.cache.has(col)) { this.cache.get(col).set(id, data); this.emit(col); }
+  },
+  async del(col, id) {
+    const { error } = await this.client.from(SB_TABLE).delete().eq('collection', col).eq('id', id);
+    if (error) throw error;
+    if (this.cache.has(col)) { this.cache.get(col).delete(id); this.emit(col); }
+  },
+  async get(col, id) {
+    const { data, error } = await this.client.from(SB_TABLE).select('data').eq('collection', col).eq('id', id).maybeSingle();
+    if (error) throw error;
+    return { id, exists: !!data, data: () => data ? data.data : undefined };
+  },
+  api() {
+    const sub = (map, key, fn, col) => {
+      if (!map.has(key)) map.set(key, new Set());
+      map.get(key).add(fn);
+      if (this.loaded.get(col)) this.emit(col); else this.load(col).catch(() => {});
+      return () => map.get(key).delete(fn);
+    };
+    const doc = (col, id) => ({
+      get: () => this.get(col, id),
+      set: data => this.put(col, id, data),
+      delete: () => this.del(col, id),
+      onSnapshot: fn => sub(this.docSubs, col + '/' + id, fn, col),
+    });
+    return {
+      collection: col => ({ doc: id => doc(col, id), onSnapshot: fn => sub(this.colSubs, col, fn, col) }),
+      doc: path => { const i = path.indexOf('/'); return doc(path.slice(0, i), path.slice(i + 1)); },
+    };
+  },
+  /** Primera vez en este dispositivo con esta cuenta: ofrece subir lo que haya guardado en el navegador. */
+  async migrate() {
+    const flag = 'controlvinted.migrated.' + this.user.id;
+    try { if (localStorage.getItem(flag)) return; } catch { return; }
+    const local = {};
+    for (const [key, cols] of Object.entries(SB_LOCAL)) {
+      let d = null; try { d = JSON.parse(localStorage.getItem(key) || 'null'); } catch {}
+      for (const c of cols) local[c] = d && d[c] && typeof d[c] === 'object' ? d[c] : {};
+    }
+    let cloudHist = new Set();
+    try { cloudHist = new Set((await this.client.from(SB_TABLE).select('id').eq('collection', 'history')).data?.map(r => r.id) || []); } catch {}
+    const has = (c, id) => c === 'history' ? cloudHist.has(id) : this.cache.get(c).has(id);
+    const todo = [];
+    for (const c of ['accounts', 'debts', 'history']) for (const [id, data] of Object.entries(local[c])) if (ID_RE.test(id) && data && !has(c, id)) todo.push([c, id, c === 'history' ? { events: Array.isArray(data) ? data.slice(0, 300) : [] } : data]);
+    const ls = local.settings, cs = this.cache.get('settings').get('main');
+    if (Object.keys(ls).length && !cs) todo.push(['settings', 'main', ls]);
+    const nA = todo.filter(t => t[0] === 'accounts').length, nD = todo.filter(t => t[0] === 'debts').length;
+    const mark = () => { try { localStorage.setItem(flag, new Date().toISOString()); } catch {} };
+    if (!nA && !nD) {
+      for (const [c, id, data] of todo) { try { await this.put(c, id, data); } catch {} }
+      return mark();
+    }
+    const otherKey = cs && cs.vault && ls.vault && cs.vault.salt !== ls.vault.salt;
+    await new Promise(resolve => {
+      const root = openLayer(`<div class="modal narrow" role="alertdialog" aria-labelledby="sbMT">
+        <div class="modal-h"><h2 id="sbMT">Subir los datos de este dispositivo</h2></div>
+        <div class="modal-b">
+          <p style="margin:0">Este navegador tiene <b>${nA} ${nA === 1 ? 'cuenta' : 'cuentas'}</b> y <b>${nD} ${nD === 1 ? 'deuda' : 'deudas'}</b> que todavía no están en la nube. Si las subes, las verás en todos tus dispositivos. No se borra nada de lo que ya hay en la nube.</p>
+          ${otherKey ? `<div class="alert r">${ICON.lock}<p>Las contraseñas guardadas aquí usan otra clave maestra distinta de la de la nube: después de subirlas no se podrán descifrar y tendrás que volver a escribirlas.</p></div>` : ''}
+        </div>
+        <div class="modal-f"><button class="btn ghost" type="button" data-c="no">Ahora no</button><button class="btn primary" type="button" data-c="yes" autofocus>Subir a la nube</button></div></div>`,
+        { onClose: () => resolve() });
+      root.addEventListener('click', async e => {
+        const c = e.target.closest('[data-c]'); if (!c) return;
+        if (c.dataset.c === 'no') { mark(); return closeLayer(); }
+        c.disabled = true;
+        let done = 0;
+        try {
+          for (const [col, id, data] of todo) { await this.put(col, id, data); done++; c.textContent = `Subiendo… ${done}/${todo.length}`; }
+          mark(); closeLayer(); toast('Datos subidos a la nube');
+        } catch (err) { c.disabled = false; c.textContent = 'Reintentar'; toast(`Se subieron ${done} de ${todo.length}. Comprueba la conexión.`, true); }
+      });
+    });
   },
 };
 
