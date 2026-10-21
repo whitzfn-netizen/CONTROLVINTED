@@ -359,6 +359,8 @@ textarea.field{resize:vertical;min-height:84px}
 .pay-row b{font-variant-numeric:tabular-nums}
 .qbtn.go{color:var(--fg);border-color:var(--line-2)}
 @media (max-width:560px){ .maintabs{width:100%} .maintabs button{flex:1 1 0;padding:10px 12px} }
+.split .av,.track .av{background:var(--blue)}
+.mv-list{max-height:320px;overflow:auto;padding-right:4px}
 @media (max-width:1080px){ .kpis{grid-template-columns:repeat(2,minmax(0,1fr))} .overview{grid-template-columns:1fr} }
 @media (max-width:780px){
   .table-wrap{overflow:visible}
@@ -574,7 +576,7 @@ const OPERATORS = ['Simyo','Lowi','Digi','Pepephone','O2','Movistar','Vodafone',
 const SECRET = { vintedPassword:'Contraseña de Vinted', emailPassword:'Contraseña del correo', simPin:'PIN de la SIM', simPuk:'PUK de la SIM', phoneLock:'Código de bloqueo del móvil' };
 const COMPLETE = [['vintedUser','usuario de Vinted'],['vintedPassword','contraseña de Vinted'],['email','correo'],['emailPassword','contraseña del correo'],['phone','teléfono'],['simPin','PIN de la SIM']];
 const isSimyo = op => norm(op) === 'simyo';
-const totalOf = a => (a.withdrawn || 0) + (a.pending || 0);
+const totalOf = a => (a.withdrawn || 0) + (a.available || 0) + (a.pending || 0);
 const hasField = (a, k) => SECRET[k] ? !!(a.has && a.has[k]) : !!a[k];
 const missing = a => COMPLETE.filter(([k]) => !hasField(a, k));
 const simStatus = a => SIM[a.simStatus] ? a.simStatus : 'activa';
@@ -611,7 +613,7 @@ const ICON = {
 /* ---------- Almacenamiento: base de datos privada del artefacto, o el navegador como respaldo ---------- */
 const LS_KEY = 'vinted-control.v1';
 const Store = {
-  mode: 'loading', db: null, accounts: new Map(), settings: { defaultSimCost: 500 }, local: null, lastSync: null,
+  mode: 'loading', db: null, accounts: new Map(), movements: new Map(), settings: { defaultSimCost: 500 }, local: null, lastSync: null,
   histQueue: new Map(),
   async init() {
     let db = null;
@@ -629,7 +631,7 @@ const Store = {
           this.mode = 'db'; this.db = db;
           this.accounts = new Map(snap.docs.map(d => [d.id, { ...d.data(), id: d.id }]));
           this.lastSync = new Date();
-          if (first) { this.watchSettings(); done(true); }
+          if (first) { this.watchSettings(); this.watchMovements(); done(true); }
           changed();
         }, err => {
           if (first) { done(false); return; }
@@ -637,6 +639,14 @@ const Store = {
         });
       } catch { done(false); }
     });
+  },
+  watchMovements() {
+    try {
+      this.db.collection('movements').onSnapshot(snap => {
+        this.movements = new Map(snap.docs.map(d => [d.id, { ...d.data(), id: d.id }]));
+        changed();
+      }, () => {});
+    } catch {}
   },
   watchSettings() {
     try {
@@ -653,6 +663,8 @@ const Store = {
     this.local = data && typeof data === 'object' ? data : { accounts: {}, history: {}, settings: {} };
     this.local.accounts ||= {}; this.local.history ||= {}; this.local.settings ||= {};
     this.accounts = new Map(Object.entries(this.local.accounts).map(([id, a]) => [id, { ...a, id }]));
+    this.local.movements ||= {};
+    this.movements = new Map(Object.entries(this.local.movements).map(([id, m]) => [id, { ...m, id }]));
     this.settings = { ...this.settings, ...this.local.settings };
     changed();
   },
@@ -675,10 +687,15 @@ const Store = {
     if (this.mode === 'db') {
       const prev = this.accounts.get(id);
       this.accounts.delete(id); changed();
-      try { await this.db.collection('accounts').doc(id).delete(); await this.db.doc('history/' + id).delete(); }
+      try {
+        for (const m of this.movementsOf(id)) { this.movements.delete(m.id); await this.db.collection('movements').doc(m.id).delete(); }
+        await this.db.collection('accounts').doc(id).delete(); await this.db.doc('history/' + id).delete();
+      }
       catch (e) { if (prev) this.accounts.set(id, prev); changed(); throw e; }
     } else {
-      delete this.local.accounts[id]; delete this.local.history[id]; this.accounts.delete(id); this.persistLocal(); changed();
+      delete this.local.accounts[id]; delete this.local.history[id]; this.accounts.delete(id);
+      for (const m of this.movementsOf(id)) { delete this.local.movements[m.id]; this.movements.delete(m.id); }
+      this.persistLocal(); changed();
     }
   },
   async getHistory(id) {
@@ -705,6 +722,25 @@ const Store = {
     this.histQueue.set(id, p);
     return p.then(() => { if (UI.detailId === id) loadHistory(id); });
   },
+  movementsOf(id) { return [...this.movements.values()].filter(m => m.accountId === id); },
+  /** Un movimiento es un registro nuevo e inmutable: no se sobrescribe ni se recorta nunca. */
+  async addMovement(m) {
+    if (this.movements.has(m.id)) return;
+    const { id, ...data } = m;
+    this.movements.set(id, m); changed();
+    try {
+      if (this.mode === 'db') await this.db.collection('movements').doc(id).set(data);
+      else { this.local.movements[id] = data; if (!this.persistLocal()) throw new Error('sin espacio'); }
+    } catch (e) {
+      this.movements.delete(id); if (this.mode !== 'db') delete this.local.movements[id]; changed();
+      throw e;
+    }
+  },
+  async removeMovement(id) {
+    this.movements.delete(id); changed();
+    if (this.mode === 'db') await this.db.collection('movements').doc(id).delete();
+    else { delete this.local.movements[id]; this.persistLocal(); }
+  },
   async putHistory(id, events) {
     if (this.mode === 'db') await this.db.doc('history/' + id).set({ events });
     else { this.local.history[id] = events; this.persistLocal(); }
@@ -728,7 +764,7 @@ const Store = {
    datos del artefacto (collection/doc, get/set/delete, onSnapshot), así el resto de la app no cambia. */
 const SYNC_CRED = 'controlvinted.sync', SYNC_CACHE = 'controlvinted.sync.cache', SYNC_OFF = 'controlvinted.sync.off';
 const SYNC_ITER = 310000, SYNC_TOMB_MS = 90 * 86400000;
-const SYNC_LOCAL = { 'vinted-control.v1': ['accounts', 'history', 'settings'], 'vinted-control.debts.v1': ['debts'] };
+const SYNC_LOCAL = { 'vinted-control.v1': ['accounts', 'history', 'settings', 'movements'], 'vinted-control.debts.v1': ['debts'] };
 const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new';
 const Sync = {
   cfg: null, cred: null, aes: null, docs: {}, sha: null, etag: null, ver: 0, saved: 0, saving: false, again: false, timer: 0,
@@ -1315,17 +1351,17 @@ function filtered() {
 }
 
 function totals(list) {
-  const t = { n: list.length, acc: { activa:0, revision:0, baneada:0 }, mob: { activo:0, inactivo:0, averiado:0 }, sim: { activa:0, bloqueada:0, baja:0 }, withdrawn: 0, pending: 0, simCost: 0, simyo: 0, withPending: 0, incomplete: 0 };
+  const t = { n: list.length, acc: { activa:0, revision:0, baneada:0 }, mob: { activo:0, inactivo:0, averiado:0 }, sim: { activa:0, bloqueada:0, baja:0 }, withdrawn: 0, available: 0, pending: 0, simCost: 0, simyo: 0, withPending: 0, incomplete: 0 };
   for (const a of list) {
     if (t.acc[a.accountStatus] !== undefined) t.acc[a.accountStatus]++;
     if (t.mob[a.phoneStatus] !== undefined) t.mob[a.phoneStatus]++;
     t.sim[simStatus(a)]++;
-    t.withdrawn += a.withdrawn || 0; t.pending += a.pending || 0; t.simCost += a.simCost || 0;
+    t.withdrawn += a.withdrawn || 0; t.available += a.available || 0; t.pending += a.pending || 0; t.simCost += a.simCost || 0;
     if (isSimyo(a.operator)) t.simyo++;
     if ((a.pending || 0) > 0) t.withPending++;
     if (missing(a).length) t.incomplete++;
   }
-  t.total = t.withdrawn + t.pending;
+  t.total = t.withdrawn + t.available + t.pending;
   return t;
 }
 
@@ -1351,9 +1387,9 @@ function renderKpis() {
       <div class="head"><span>Dinero total</span><span class="ico">${ICON.wallet}</span></div>
       <div class="val">${money(t.total)}</div>
       <div class="split" role="img" aria-label="Retirado ${pct}% del total">
-        <span class="w" style="width:${t.total ? (t.withdrawn / t.total * 100) : 0}%"></span><span class="p" style="width:${t.total ? (t.pending / t.total * 100) : 0}%"></span>
+        <span class="w" style="width:${t.total ? (t.withdrawn / t.total * 100) : 0}%"></span><span class="av" style="width:${t.total ? (t.available / t.total * 100) : 0}%"></span><span class="p" style="width:${t.total ? (t.pending / t.total * 100) : 0}%"></span>
       </div>
-      <div class="legend"><span><i style="background:var(--green)"></i>Retirado ${money(t.withdrawn)}</span><span><i style="background:var(--orange)"></i>Pendiente ${money(t.pending)}</span><span class="c-b">Neto estimado tras SIM: ${money(t.total - t.simCost)}</span></div>
+      <div class="legend"><span><i style="background:var(--green)"></i>Retirado ${money(t.withdrawn)}</span><span><i style="background:var(--blue)"></i>Disponible ${money(t.available)}</span><span><i style="background:var(--orange)"></i>Pendiente ${money(t.pending)}</span><span class="c-b">Neto estimado tras SIM: ${money(t.total - t.simCost)}</span></div>
     </article>
     <article class="kpi">
       <div class="head"><span>Saldo retirado</span><span class="ico g">${ICON.out}</span></div>
@@ -1405,9 +1441,9 @@ function renderOverview() {
     <div class="panel chart">
       <div class="chart-h"><h2>Dinero por cuenta</h2><span>${rest > 0 ? `Las 8 con más dinero de ${all.length}` : 'Retirado y pendiente'}</span></div>
       ${t.total ? `<ul class="bars">${top.map(a => `<li><button type="button" data-open="${esc(a.id)}" title="${esc(a.name)}">${esc(a.name)}</button>
-        <div class="track" role="img" aria-label="${esc(a.name)}: retirado ${money(a.withdrawn)}, pendiente ${money(a.pending)}"><span class="w" style="width:${(a.withdrawn || 0) / max * 100}%"></span><span class="p" style="width:${(a.pending || 0) / max * 100}%"></span></div>
+        <div class="track" role="img" aria-label="${esc(a.name)}: retirado ${money(a.withdrawn)}, disponible ${money(a.available)}, pendiente ${money(a.pending)}"><span class="w" style="width:${(a.withdrawn || 0) / max * 100}%"></span><span class="av" style="width:${(a.available || 0) / max * 100}%"></span><span class="p" style="width:${(a.pending || 0) / max * 100}%"></span></div>
         <span class="amt">${money(totalOf(a))}</span></li>`).join('')}</ul>
-        <div class="legend"><span><i style="background:var(--green)"></i>Retirado</span><span><i style="background:var(--orange)"></i>Pendiente</span></div>`
+        <div class="legend"><span><i style="background:var(--green)"></i>Retirado</span><span><i style="background:var(--blue)"></i>Disponible</span><span><i style="background:var(--orange)"></i>Pendiente</span></div>`
       : '<p class="muted" style="margin:0">Todavía no hay importes registrados. Añádelos al editar cada cuenta.</p>'}
     </div>
     <div class="panel chart">
@@ -1464,7 +1500,7 @@ function cardHtml(a) {
       <div><span class="l">Pendiente</span><b class="${a.pending ? 'c-o' : 'muted'}">${money(a.pending)}</b></div>
       <div class="tot"><span class="l">Total</span><b>${money(tot)}</b></div>
     </div>
-    <div class="split" aria-hidden="true"><span class="w" style="width:${tot ? (a.withdrawn || 0) / tot * 100 : 0}%"></span><span class="p" style="width:${tot ? (a.pending || 0) / tot * 100 : 0}%"></span></div>
+    <div class="split" aria-hidden="true"><span class="w" style="width:${tot ? (a.withdrawn || 0) / tot * 100 : 0}%"></span><span class="av" style="width:${tot ? (a.available || 0) / tot * 100 : 0}%"></span><span class="p" style="width:${tot ? (a.pending || 0) / tot * 100 : 0}%"></span></div>
     <ul class="ac-info">
       <li>${ICON.sim}<span class="txt mono">${esc(phoneTxt(a))}</span>${a.operator ? `<span class="op">${esc(a.operator)}</span>` : ''}<span class="dotl t-${s.t}">SIM ${esc(s.label.toLowerCase())}</span></li>
       <li>${ICON.mail}<span class="txt">${a.email ? esc(emailTxt(a)) : '<span class="muted">Sin correo</span>'}</span></li>
@@ -1616,7 +1652,7 @@ function openForm(id, focusSection) {
         <div class="fg full"><span class="lbl">Estado del móvil</span>${seg('f-mob', MOB, a.phoneStatus)}</div></div>`)}
       ${sec('money', ICON.euro, 'g', 'Dinero', 'Importes en euros. El total se calcula solo', `<div class="grid2">
         <div class="fg" data-f="withdrawn"><label for="f-w">Saldo retirado</label><div class="money-in"><input class="field" id="f-w" inputmode="decimal" value="${moneyPlain(a.withdrawn)}" autocomplete="off"><span>€</span></div><span class="err"></span></div>
-        <div class="fg" data-f="pending"><label for="f-p">Saldo pendiente de retirar</label><div class="money-in"><input class="field" id="f-p" inputmode="decimal" value="${moneyPlain(a.pending)}" autocomplete="off"><span>€</span></div><span class="err"></span></div>
+        <div class="fg" data-f="pending"><label for="f-p">Saldo pendiente (por recibir)</label><div class="money-in"><input class="field" id="f-p" inputmode="decimal" value="${moneyPlain(a.pending)}" autocomplete="off"><span>€</span></div><span class="err"></span></div>
         <div class="fg full"><div class="preview-total"><span>Dinero total (retirado + pendiente)</span><b id="f-total">${money(totalOf(a))}</b></div></div></div>`)}
       ${sec('notes', ICON.note, '', 'Fechas y notas', 'Cuándo empezó la cuenta y cualquier observación', `<div class="grid2">
         <div class="fg" data-f="registeredAt"><label for="f-date">Fecha de registro</label><input class="field" id="f-date" type="date" value="${esc(a.registeredAt || today())}"><span class="err"></span></div>
@@ -1671,7 +1707,9 @@ function openForm(id, focusSection) {
     const email = $('#f-email').value.trim();
     const phone = cleanPhone($('#f-phone').value);
     const operator = $('#f-op').value.trim();
-    const withdrawn = parseMoney($('#f-w').value), pending = parseMoney($('#f-p').value), simCost = parseMoney($('#f-sim').value);
+    const withdrawn = parseMoney($('#f-w').value), simCost = parseMoney($('#f-sim').value);
+    // Un pendiente negativo (confirmado en un movimiento) se mantiene si no se ha tocado el campo.
+    const pending = editing && $('#f-p').value === moneyPlain(editing.pending || 0) ? (editing.pending || 0) : parseMoney($('#f-p').value);
     const registeredAt = $('#f-date').value, lastWithdrawalAt = $('#f-lastw').value;
     const others = [...Store.accounts.values()].filter(x => x.id !== id);
     let ok = true;
@@ -1719,7 +1757,7 @@ function openForm(id, focusSection) {
         deviceModel: $('#f-device').value.trim(),
         accountStatus: form.querySelector('input[name="f-acc"]:checked')?.value || 'activa',
         phoneStatus: form.querySelector('input[name="f-mob"]:checked')?.value || 'activo',
-        withdrawn, pending, simCost, registeredAt, lastWithdrawalAt, notes: $('#f-notes').value.trim(),
+        withdrawn, available: (id && Store.accounts.get(id)?.available) || 0, pending, simCost, registeredAt, lastWithdrawalAt, notes: $('#f-notes').value.trim(),
         secret, has, createdAt: editing?.createdAt || now, updatedAt: now,
       };
       await Store.putAccount(acc);
@@ -1735,9 +1773,9 @@ function openForm(id, focusSection) {
 }
 
 /* ---------- Historial ---------- */
-const FIELD_LABEL = { accountStatus:'Estado de la cuenta', phoneStatus:'Estado del móvil', simStatus:'Estado de la SIM', withdrawn:'Saldo retirado', pending:'Saldo pendiente', simCost:'Coste SIM', name:'Nombre', vintedUser:'Usuario de Vinted', email:'Correo', phone:'Teléfono', operator:'Operador', deviceModel:'Modelo del móvil', registeredAt:'Fecha de registro', lastWithdrawalAt:'Última retirada', notes:'Notas', ...SECRET };
+const FIELD_LABEL = { accountStatus:'Estado de la cuenta', phoneStatus:'Estado del móvil', simStatus:'Estado de la SIM', withdrawn:'Saldo retirado', available:'Saldo disponible', pending:'Saldo pendiente', simCost:'Coste SIM', name:'Nombre', vintedUser:'Usuario de Vinted', email:'Correo', phone:'Teléfono', operator:'Operador', deviceModel:'Modelo del móvil', registeredAt:'Fecha de registro', lastWithdrawalAt:'Última retirada', notes:'Notas', ...SECRET };
 const fmtField = (f, v) => {
-  if (['withdrawn','pending','simCost'].includes(f)) return money(v);
+  if (['withdrawn','available','pending','simCost'].includes(f)) return money(v);
   if (f === 'accountStatus') return ACC[v]?.label || v;
   if (f === 'phoneStatus') return MOB[v]?.label || v;
   if (f === 'simStatus') return SIM[v]?.label || v;
@@ -1771,7 +1809,7 @@ function renderHistory() {
   if (h === undefined || h === 'loading') { box.innerHTML = '<p class="muted" style="margin:0">Cargando historial…</p>'; return; }
   if (h === null) { box.innerHTML = '<p class="muted" style="margin:0">No se pudo cargar el historial.</p>'; return; }
   if (!h.length) { box.innerHTML = '<p class="muted" style="margin:0">Sin cambios registrados todavía.</p>'; return; }
-  const kindLabel = { create:'Cuenta creada', edit:'Edición', quick:'Cambio rápido de estado', import:'Importada desde CSV' };
+  const kindLabel = { create:'Cuenta creada', edit:'Edición', quick:'Cambio rápido de estado', import:'Importada desde CSV', saldo:'Movimiento de saldo' };
   box.innerHTML = `<ul class="timeline">${h.map(ev => `<li><div class="when">${esc(fmtDateTime(ev.at))} · ${kindLabel[ev.kind] || 'Cambio'}</div>${(ev.changes || []).map(c => {
     const lab = FIELD_LABEL[c.f] || c.f;
     if (c.note) return `<div class="chg">Notas actualizadas</div>`;
@@ -1779,6 +1817,119 @@ function renderHistory() {
     if (ev.kind === 'create' || ev.kind === 'import') return `<div class="chg">${lab}: <b>${esc(fmtField(c.f, c.to))}</b></div>`;
     return `<div class="chg">${lab}: ${esc(fmtField(c.f, c.from))} → <b>${esc(fmtField(c.f, c.to))}</b></div>`;
   }).join('')}</li>`).join('')}</ul>`;
+}
+
+/* ---------- Movimientos de saldo: dinero que llega al saldo disponible o se añade al pendiente ---------- */
+const MV_KIND = {
+  disponible: { label: 'Llegó a mi saldo disponible', short: 'Al saldo disponible', sign: 'Importe recibido', t: 'g' },
+  pendiente: { label: 'Añadir al saldo pendiente', short: 'Al saldo pendiente', sign: 'Importe añadido', t: 'o' },
+};
+/** Nuevos saldos de un movimiento. Pasar dinero de pendiente a disponible lo resta del pendiente una sola vez. */
+function balanceAfter(a, type, amount) {
+  const before = { available: a.available || 0, pending: a.pending || 0 };
+  const after = type === 'disponible'
+    ? { available: before.available + amount, pending: before.pending - amount }
+    : { available: before.available, pending: before.pending + amount };
+  return { before, after, negative: after.pending < 0 };
+}
+function cleanMovement(m) {
+  if (!m || typeof m !== 'object' || !ID_RE.test(String(m.id || '')) || !ID_RE.test(String(m.accountId || ''))) return null;
+  if (!Object.hasOwn(MV_KIND, m.type) || !Number.isSafeInteger(m.amount) || m.amount <= 0 || m.amount > MAX_CENTS) return null;
+  const bal = b => ({ available: signed(b && b.available), pending: signed(b && b.pending) });
+  return { id: m.id, accountId: m.accountId, at: txt(m.at, 40) || new Date().toISOString(), date: DATE_RE.test(m.date) ? m.date : today(),
+    type: m.type, amount: m.amount, before: bal(m.before), after: bal(m.after), negative: !!m.negative, note: txt(m.note, 120) };
+}
+const movementsBlock = a => {
+  const list = Store.movementsOf(a.id).sort((x, y) => (y.at || '').localeCompare(x.at || ''));
+  const body = !list.length
+    ? '<p class="muted" style="margin:0">Todavía no hay movimientos. Regístralos cada vez que te llegue dinero.</p>'
+    : `<ul class="timeline mv-list">${list.map(m => `<li>
+        <div class="when">${fmtDate(m.date)} · ${esc(MV_KIND[m.type]?.short || 'Movimiento')}</div>
+        <div class="chg"><b class="${m.type === 'disponible' ? 'c-g' : 'c-o'}">+${money(m.amount)}</b>${m.note ? ` · ${esc(m.note)}` : ''}</div>
+        <div class="chg">Disponible ${money(m.before.available)} → <b>${money(m.after.available)}</b> · Pendiente ${money(m.before.pending)} → <b>${money(m.after.pending)}</b></div>
+        ${m.negative ? '<div class="chg c-r">El pendiente quedó en negativo (confirmado)</div>' : ''}
+      </li>`).join('')}</ul>`;
+  return `<div class="d-sec"><div class="row" style="justify-content:space-between;align-items:center"><h4>Movimientos de saldo (${list.length})</h4><button class="btn sm primary" type="button" data-dact="movement">${ICON.plus}Registrar movimiento</button></div>${body}</div>`;
+};
+function openMovement(accountId) {
+  if (!Store.accounts.get(accountId)) return;
+  const mid = rid('mv'), a0 = Store.accounts.get(accountId);
+  // Lo que se muestra y se confirma: los saldos tal como estaban al abrir (o al último aviso de cambio).
+  let seen = { available: a0.available || 0, pending: a0.pending || 0 }, busy = false;
+  const root = openLayer(`<form class="modal narrow" id="mvForm" novalidate aria-labelledby="mvT">
+    <div class="modal-h"><h2 id="mvT">Registrar movimiento de saldo</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
+    <div class="modal-b">
+      <div class="fg"><span class="lbl">¿Qué ha pasado?</span>
+        <div class="seg" role="radiogroup">
+          <input type="radio" name="mv-type" id="mv-t-disponible" value="disponible" checked><label for="mv-t-disponible" class="g">Llegó a mi saldo disponible</label>
+          <input type="radio" name="mv-type" id="mv-t-pendiente" value="pendiente"><label for="mv-t-pendiente">Añadir al saldo pendiente</label>
+        </div></div>
+      <div class="grid2">
+        <div class="fg"><label for="mv-amount" id="mv-amount-lab">Importe recibido</label><div class="money-in"><input class="field" id="mv-amount" inputmode="decimal" placeholder="0,00" autocomplete="off" autofocus><span>€</span></div><span class="err"></span></div>
+        <div class="fg"><label for="mv-date">Fecha</label><input class="field" type="date" id="mv-date" value="${today()}"></div>
+        <div class="fg full"><label for="mv-note">Nota <span class="muted">(opcional)</span></label><input class="field" id="mv-note" maxlength="120" autocomplete="off" placeholder="Venta, transferencia, Bizum…"></div>
+      </div>
+      <dl class="kv" id="mv-prev"></dl>
+      <div class="alert r" id="mv-neg" hidden>${ICON.note}<p></p></div>
+      <label class="check" id="mv-negc" hidden><input type="checkbox" id="mv-negok"><span>Entiendo que el saldo pendiente quedará en negativo.</span></label>
+      <div class="alert r" id="mv-stale" hidden><p>El saldo ha cambiado mientras revisabas. Revisa la vista previa actualizada y confirma de nuevo.</p></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" type="button" data-close>Cancelar</button><button class="btn primary" type="submit" id="mv-ok" disabled>Confirmar movimiento</button></div></form>`,
+    { onClose: () => openDetail(accountId) });
+  const form = $('#mvForm', root), q = sel => $(sel, form);
+  const kind = () => form.querySelector('input[name="mv-type"]:checked').value;
+  /** Vista previa de los saldos que se ven (seen). Cambiar el importe no los actualiza. */
+  const render = () => {
+    const type = kind(), raw = parseMoney(q('#mv-amount').value), valid = raw !== null && raw > 0;
+    const r = balanceAfter(seen, type, valid ? raw : 0), neg = valid && r.negative;
+    q('#mv-amount-lab').textContent = MV_KIND[type].sign;
+    q('#mv-prev').innerHTML = `
+      <dt>Saldo disponible anterior</dt><dd class="num">${money(r.before.available)}</dd>
+      <dt>Saldo pendiente anterior</dt><dd class="num">${money(r.before.pending)}</dd>
+      <dt>${MV_KIND[type].sign}</dt><dd class="num ${type === 'disponible' ? 'c-g' : 'c-o'}">${valid ? '+' + money(raw) : '—'}</dd>
+      <dt>Nuevo saldo disponible</dt><dd class="num"><b>${money(r.after.available)}</b></dd>
+      <dt>Nuevo saldo pendiente</dt><dd class="num"><b class="${neg ? 'c-r' : ''}">${money(r.after.pending)}</b></dd>`;
+    q('#mv-neg').hidden = !neg;
+    if (neg) q('#mv-neg p').textContent = `El saldo pendiente quedaría en ${money(r.after.pending)}, por debajo de cero. Si es correcto, confírmalo abajo.`;
+    q('#mv-negc').hidden = !neg;
+    if (!neg) q('#mv-negok').checked = false;
+    q('#mv-ok').disabled = !valid || (neg && !q('#mv-negok').checked);
+    const bad = raw === null || (raw === 0 && q('#mv-amount').value.trim() !== '');
+    q('#mv-amount').closest('.fg').classList.toggle('bad', bad);
+    q('#mv-amount').closest('.fg').querySelector('.err').textContent = raw === null ? 'Importe no válido. Ej.: 15,00' : bad ? 'El importe debe ser mayor que 0' : '';
+  };
+  form.addEventListener('input', render);
+  form.addEventListener('change', render);
+  form.addEventListener('click', e => { if (e.target.closest('[data-close]')) closeLayer(); });
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const a = Store.accounts.get(accountId);
+    if (busy || !a) return;
+    if (Store.movements.has(mid)) return closeLayer(); // ya guardado: no se repite
+    const type = kind(), raw = parseMoney(q('#mv-amount').value);
+    if (!(raw > 0)) { q('#mv-amount').focus(); return; }
+    // Si el saldo ha cambiado desde la vista previa (otro dispositivo o un movimiento anterior), no se guarda: se muestra el saldo nuevo.
+    if ((a.available || 0) !== seen.available || (a.pending || 0) !== seen.pending) {
+      seen = { available: a.available || 0, pending: a.pending || 0 };
+      render(); q('#mv-stale').hidden = false; return;
+    }
+    const r = balanceAfter(a, type, raw);
+    if (r.negative && !q('#mv-negok').checked) return q('#mv-negok').focus();
+    busy = true;
+    const btn = q('#mv-ok'); btn.disabled = true; btn.textContent = 'Guardando…';
+    const now = new Date().toISOString();
+    const rec = { id: mid, accountId, at: now, date: DATE_RE.test(q('#mv-date').value) ? q('#mv-date').value : today(), type, amount: raw,
+      before: r.before, after: r.after, negative: r.negative, note: q('#mv-note').value.trim() };
+    try {
+      await Store.addMovement(rec);
+      try { await Store.putAccount({ ...a, available: r.after.available, pending: r.after.pending, updatedAt: now }); }
+      catch (err) { await Store.removeMovement(mid).catch(() => {}); throw err; }
+      Store.addHistory(a.id, { at: now, kind: 'saldo', changes: [{ f: 'available', from: r.before.available, to: r.after.available }, { f: 'pending', from: r.before.pending, to: r.after.pending }] });
+      closeLayer();
+      toast(type === 'disponible' ? `${money(raw)} añadidos al saldo disponible` : `${money(raw)} añadidos al saldo pendiente`);
+    } catch (err) { busy = false; btn.disabled = false; btn.textContent = 'Confirmar movimiento'; toast(errMsg(err), true); }
+  });
+  render();
 }
 
 /* ---------- Ficha de detalle ---------- */
@@ -1826,14 +1977,16 @@ function renderDetail() {
     const days = daysSince(a.registeredAt);
     body = `
       <div class="figs">
-        <div class="fig total"><span class="l">Dinero total registrado</span><span class="v">${money(tot)}</span><div class="split" aria-hidden="true"><span class="w" style="width:${tot ? (a.withdrawn || 0) / tot * 100 : 0}%"></span><span class="p" style="width:${tot ? (a.pending || 0) / tot * 100 : 0}%"></span></div></div>
+        <div class="fig total"><span class="l">Dinero total registrado</span><span class="v">${money(tot)}</span><div class="split" aria-hidden="true"><span class="w" style="width:${tot ? (a.withdrawn || 0) / tot * 100 : 0}%"></span><span class="av" style="width:${tot ? (a.available || 0) / tot * 100 : 0}%"></span><span class="p" style="width:${tot ? (a.pending || 0) / tot * 100 : 0}%"></span></div></div>
         <div class="fig"><span class="l">Saldo retirado</span><span class="v c-g">${money(a.withdrawn)}</span></div>
-        <div class="fig"><span class="l">Saldo pendiente</span><span class="v c-o">${money(a.pending)}</span></div>
+        <div class="fig"><span class="l">Saldo disponible</span><span class="v c-b">${money(a.available)}</span><span class="l">Ya en tu saldo, sin retirar</span></div>
+        <div class="fig"><span class="l">Saldo pendiente</span><span class="v c-o">${money(a.pending)}</span><span class="l">Todavía por recibir</span></div>
         <div class="fig"><span class="l">Coste de la SIM</span><span class="v">−${money(a.simCost)}</span></div>
         <div class="fig"><span class="l">Retirado sobre total</span><span class="v">${tot ? Math.round((a.withdrawn || 0) / tot * 100) + ' %' : '—'}</span></div>
         <div class="fig est"><span class="l">Balance neto estimado<span class="tag">Estimación</span></span><span class="v c-b">${money(net)}</span><span class="l">Dinero total menos coste de la SIM. No incluye otros gastos.</span></div>
       </div>
       ${miss.length ? `<div class="alert o">${ICON.note}<p>Falta: ${miss.map(m => m[1]).join(', ')}. <button class="link-btn" type="button" data-dact="edit">Completar ficha</button></p></div>` : ''}
+      ${movementsBlock(a)}
       <div class="d-sec"><h4>Fechas</h4>
         <dl class="kv"><dt>Fecha de registro</dt><dd class="num">${fmtDate(a.registeredAt)}${days !== null && days >= 0 ? ` <span class="muted">(hace ${days} ${days === 1 ? 'día' : 'días'})</span>` : ''}</dd>
         <dt>Última retirada</dt><dd class="num">${a.lastWithdrawalAt ? fmtDate(a.lastWithdrawalAt) : '—'}</dd>
@@ -1889,6 +2042,7 @@ $('#layer').addEventListener('click', e => {
   if (act === 'copy') copyText(a[f], FIELD_LABEL[f] || 'Dato');
   if (act === 'copysecret' && detailSecrets && detailSecrets[f]) copyText(detailSecrets[f], SECRET[f]);
   if (act === 'edit') openForm(id, UI.detailTab === 'accesos' ? 'vinted' : UI.detailTab === 'sim' ? 'sim' : null);
+  if (act === 'movement') openMovement(id);
   if (act === 'delete') confirmDelete(id);
 });
 
@@ -1907,7 +2061,7 @@ function confirmDelete(id) {
   const a = Store.accounts.get(id); if (!a) return;
   const root = openLayer(`<div class="modal narrow" role="alertdialog" aria-labelledby="delT" aria-describedby="delD">
     <div class="modal-h"><h2 id="delT">Eliminar cuenta</h2></div>
-    <div class="modal-b"><p id="delD" style="margin:0">Vas a eliminar <b>${esc(a.name)}</b> (${money(totalOf(a))} registrados) junto con sus accesos guardados y su historial. Esta acción no se puede deshacer.</p></div>
+    <div class="modal-b"><p id="delD" style="margin:0">Vas a eliminar <b>${esc(a.name)}</b> (${money(totalOf(a))} registrados) junto con sus accesos guardados, su historial y sus movimientos de saldo. Esta acción no se puede deshacer.</p></div>
     <div class="modal-f"><button class="btn ghost" type="button" data-c="no" autofocus>Cancelar</button><button class="btn danger" type="button" data-c="yes">Eliminar definitivamente</button></div></div>`);
   root.addEventListener('click', async e => {
     const c = e.target.closest('[data-c]')?.dataset.c; if (!c) return;
@@ -2162,6 +2316,7 @@ const ID_RE = /^[A-Za-z0-9_\-.~:@+]{1,200}$/;
 const txt = (v, max) => typeof v === 'string' ? v.slice(0, max) : '';
 const cents = v => Number.isSafeInteger(v) && v >= 0 && v <= MAX_CENTS ? v : 0;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const signed = v => Number.isSafeInteger(v) && Math.abs(v) <= MAX_CENTS ? v : 0;
 async function buildBackup() {
   const accounts = [...Store.accounts.values()];
   const history = {};
@@ -2171,7 +2326,7 @@ async function buildBackup() {
     if (h.length) history[a.id] = h;
   }
   const { defaultSimCost, vault } = Store.settings;
-  return { app: 'vinted-control', format: 2, exportedAt: new Date().toISOString(), settings: { defaultSimCost, vault }, accounts, history };
+  return { app: 'vinted-control', format: 3, exportedAt: new Date().toISOString(), settings: { defaultSimCost, vault }, accounts, history, movements: [...Store.movements.values()] };
 }
 function cleanAccount(a, now) {
   const pick = (map, v, dflt) => Object.hasOwn(map, v) ? v : dflt;
@@ -2181,7 +2336,7 @@ function cleanAccount(a, now) {
     vintedUser: txt(a.vintedUser, 80), email: txt(a.email, 120), phone: txt(a.phone, 20),
     operator: txt(a.operator, 40), simStatus: pick(SIM, a.simStatus, 'activa'), deviceModel: txt(a.deviceModel, 60),
     accountStatus: pick(ACC, a.accountStatus, 'activa'), phoneStatus: pick(MOB, a.phoneStatus, 'activo'),
-    withdrawn: cents(a.withdrawn), pending: cents(a.pending), simCost: cents(a.simCost),
+    withdrawn: cents(a.withdrawn), available: cents(a.available), pending: signed(a.pending), simCost: cents(a.simCost),
     registeredAt: DATE_RE.test(a.registeredAt) ? a.registeredAt : today(),
     lastWithdrawalAt: DATE_RE.test(a.lastWithdrawalAt) ? a.lastWithdrawalAt : '',
     notes: txt(a.notes, 2000), secret,
@@ -2248,12 +2403,14 @@ function readBackup(file) {
     const now = new Date().toISOString();
     const valid = data.accounts.filter(a => a && typeof a === 'object' && ID_RE.test(String(a.id || '')) && typeof a.name === 'string' && a.name.trim()).map(a => cleanAccount(a, now));
     const skipped = data.accounts.length - valid.length;
+    const movs = (Array.isArray(data.movements) ? data.movements : []).map(cleanMovement).filter(Boolean);
     const bv = data.settings && data.settings.vault;
     const sameKey = !bv || !Vault.meta() || bv.salt === Vault.meta().salt;
     const root = openLayer(`<div class="modal narrow" role="alertdialog" aria-labelledby="rsT">
       <div class="modal-h"><h2 id="rsT">Restaurar copia</h2></div>
       <div class="modal-b">
         <p style="margin:0">Se restaurarán <b>${valid.length}</b> ${valid.length === 1 ? 'cuenta' : 'cuentas'} de la copia del ${esc(fmtDateTime(data.exportedAt))}. Las cuentas con el mismo identificador se sustituyen y las demás no se borran.</p>
+        ${movs.length ? `<p style="margin:0">Movimientos de saldo en la copia: <b>${movs.length}</b>. Los que ya existan no se modifican.</p>` : ''}
         ${skipped ? `<div class="alert o"><p>${skipped} ${skipped === 1 ? 'fila no es válida y se omitirá' : 'filas no son válidas y se omitirán'}.</p></div>` : ''}
         ${sameKey ? '' : `<div class="alert r">${ICON.lock}<p>La copia usa otra clave maestra. Las cuentas que no estén en la copia dejarán de poder descifrar sus contraseñas.</p></div>`}
       </div>
@@ -2285,6 +2442,7 @@ async function applyBackup(data, valid, btn) {
       const ev = hist[a.id];
       if (Array.isArray(ev) && ev.length) await Store.putHistory(a.id, ev.slice(0, 300));
     }
+    for (const m of (Array.isArray(data.movements) ? data.movements : []).map(cleanMovement).filter(Boolean)) await Store.addMovement(m);
     if (Vault.meta()?.salt !== prevSalt) Vault.lock();
     closeLayer();
     toast(`${done} ${done === 1 ? 'cuenta restaurada' : 'cuentas restauradas'}`);
