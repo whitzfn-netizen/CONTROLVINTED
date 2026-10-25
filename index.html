@@ -359,7 +359,7 @@ textarea.field{resize:vertical;min-height:84px}
 .pay-row b{font-variant-numeric:tabular-nums}
 .qbtn.go{color:var(--fg);border-color:var(--line-2)}
 @media (max-width:560px){ .maintabs{width:100%} .maintabs button{flex:1 1 0;padding:10px 12px} }
-@media (max-width:420px){ .maintabs{gap:2px;padding:4px} .maintabs button{padding:10px 4px;font-size:12.5px;letter-spacing:.02em;min-width:0;gap:4px} .maintabs .em{font-size:14px} }
+@media (max-width:420px){ .maintabs{gap:2px;padding:4px} .maintabs button{padding:10px 2px;font-size:11px;letter-spacing:0;min-width:0} .maintabs .em{display:none} }
 .split .av,.track .av{background:var(--blue)}
 .mv-list{max-height:320px;overflow:auto;padding-right:4px}
 @media (max-width:1080px){ .kpis{grid-template-columns:repeat(2,minmax(0,1fr))} .overview{grid-template-columns:1fr} }
@@ -400,13 +400,14 @@ textarea.field{resize:vertical;min-height:84px}
 <div class="wrap">
   <nav class="maintabs" id="mainTabs" role="tablist" aria-label="Secciones">
     <button type="button" role="tab" id="tab-vinted" aria-controls="view-vinted" aria-selected="true" data-main-tab="vinted"><span class="em" aria-hidden="true">📦</span>VINTED</button>
+    <button type="button" role="tab" id="tab-wallapop" aria-controls="view-vinted" aria-selected="false" tabindex="-1" data-main-tab="wallapop"><span class="em" aria-hidden="true">🛍️</span>WALLAPOP</button>
     <button type="button" role="tab" id="tab-deudas" aria-controls="view-deudas" aria-selected="false" tabindex="-1" data-main-tab="deudas"><span class="em" aria-hidden="true">💸</span>DEUDAS<span class="tab-n" id="tabDebtN" hidden></span></button>
     <button type="button" role="tab" id="tab-merc" aria-controls="view-merc" aria-selected="false" tabindex="-1" data-main-tab="merc"><span class="em" aria-hidden="true">🔌</span>MERCANCÍA</button>
   </nav>
   <div class="tabview" id="view-vinted" role="tabpanel" aria-labelledby="tab-vinted">
   <header class="top">
     <div class="brand">
-      <h1>Control de cuentas Vinted</h1>
+      <h1 id="appTitle">Control de cuentas Vinted</h1>
       <p><span id="storeBadge" class="badge"><span class="dot"></span><span>Conectando…</span></span><button id="vaultBadge" class="badge" type="button" hidden></button><span id="updatedAt"></span></p>
     </div>
     <div class="actions">
@@ -598,9 +599,12 @@ const SIM = { activa:{label:'Activa', t:'g'}, bloqueada:{label:'Bloqueada', t:'r
 const COLOR = { g:'var(--green)', r:'var(--red)', b:'var(--blue)', n:'var(--fg-2)', o:'var(--orange)' };
 const OPERATORS = ['Simyo','Lowi','Digi','Pepephone','O2','Movistar','Vodafone','Orange','Yoigo','MásMóvil','Jazztel','Otro'];
 const SECRET = { vintedPassword:'Contraseña de Vinted', emailPassword:'Contraseña del correo', simPin:'PIN de la SIM', simPuk:'PUK de la SIM', phoneLock:'Código de bloqueo del móvil' };
-const COMPLETE = [['vintedUser','usuario de Vinted'],['vintedPassword','contraseña de Vinted'],['email','correo'],['emailPassword','contraseña del correo'],['phone','teléfono'],['simPin','PIN de la SIM']];
+const COMPLETE = [['vintedUser', { toString: () => 'usuario de ' + PLAT() }],['vintedPassword', { toString: () => 'contraseña de ' + PLAT() }],['email','correo'],['emailPassword','contraseña del correo'],['phone','teléfono'],['simPin','PIN de la SIM']];
 const isSimyo = op => norm(op) === 'simyo';
 const totalOf = a => (a.withdrawn || 0) + (a.available || 0) + (a.pending || 0);
+/** Etiquetas que dependen de VINTED o WALLAPOP; se calculan al mostrarlas, no al cargar la página. */
+const secretLabel = k => (k === 'vintedPassword' ? 'Contraseña de ' + PLAT() : SECRET[k]);
+const fieldLabel = k => (k === 'vintedUser' ? 'Usuario de ' + PLAT() : FIELD_LABEL[k]);
 const hasField = (a, k) => SECRET[k] ? !!(a.has && a.has[k]) : !!a[k];
 const missing = a => COMPLETE.filter(([k]) => !hasField(a, k));
 const simStatus = a => SIM[a.simStatus] ? a.simStatus : 'activa';
@@ -639,6 +643,17 @@ const LS_KEY = 'vinted-control.v1';
 const Store = {
   mode: 'loading', db: null, accounts: new Map(), movements: new Map(), settings: { defaultSimCost: 500 }, local: null, lastSync: null,
   histQueue: new Map(),
+  /* Espacio de datos activo: '' = VINTED (sus nombres no cambian), 'wallapop' = WALLAPOP. Cada espacio tiene sus
+     propias cuentas, historial y movimientos. Los ajustes y la clave maestra son compartidos. */
+  ns: '', epoch: 0, unsubs: [],
+  col(name) { return this.ns ? this.ns + '-' + name : name; },
+  /** Parte del almacenamiento local que pertenece al espacio activo. */
+  bucket() {
+    if (!this.ns) return this.local;
+    const w = this.local.wallapop ||= {};
+    w.accounts ||= {}; w.history ||= {}; w.movements ||= {};
+    return w;
+  },
   async init() {
     let db = null;
     try { if (window.claude && typeof window.claude.use === 'function') db = await window.claude.use('db'); } catch { db = null; }
@@ -647,29 +662,39 @@ const Store = {
     this.useLocal();
   },
   tryDb(db) {
+    this.db = db;
     return new Promise(resolve => {
-      let first = true;
-      const done = ok => { if (first) { first = false; resolve(ok); } };
       try {
-        db.collection('accounts').onSnapshot(snap => {
-          this.mode = 'db'; this.db = db;
-          this.accounts = new Map(snap.docs.map(d => [d.id, { ...d.data(), id: d.id }]));
-          this.lastSync = new Date();
-          if (first) { this.watchSettings(); this.watchMovements(); done(true); }
-          changed();
-        }, err => {
-          if (first) { done(false); return; }
-          toast(err && err.code === 'revoked' ? 'Se ha perdido el acceso a los datos.' : 'Se ha perdido la sincronización. Recarga la página.', true);
-        });
-      } catch { done(false); }
+        this.watchAccounts(ok => { if (ok) { this.watchMovements(); this.watchSettings(); } resolve(ok); });
+      } catch { resolve(false); }
     });
   },
+  /** Cuentas del espacio activo. «first» recibe una vez el resultado de la primera lectura. */
+  watchAccounts(first) {
+    const epoch = this.epoch; let initial = !!first;
+    const un = this.db.collection(this.col('accounts')).onSnapshot(snap => {
+      if (epoch !== this.epoch) return;
+      this.mode = 'db';
+      this.accounts = new Map(snap.docs.map(d => [d.id, { ...d.data(), id: d.id }]));
+      this.lastSync = new Date();
+      if (initial) { initial = false; first(true); }
+      changed();
+    }, err => {
+      if (epoch !== this.epoch) return;
+      if (initial) { initial = false; first(false); return; }
+      toast(err && err.code === 'revoked' ? 'Se ha perdido el acceso a los datos.' : 'Se ha perdido la sincronización. Recarga la página.', true);
+    });
+    this.unsubs.push(un);
+  },
   watchMovements() {
+    const epoch = this.epoch;
     try {
-      this.db.collection('movements').onSnapshot(snap => {
+      const un = this.db.collection(this.col('movements')).onSnapshot(snap => {
+        if (epoch !== this.epoch) return;
         this.movements = new Map(snap.docs.map(d => [d.id, { ...d.data(), id: d.id }]));
         changed();
       }, () => {});
+      this.unsubs.push(un);
     } catch {}
   },
   watchSettings() {
@@ -680,16 +705,30 @@ const Store = {
       }, () => {});
     } catch {}
   },
+  /** Cambia de espacio (VINTED ↔ WALLAPOP) sin mezclar datos: deja de escuchar el anterior. */
+  switchNs(ns) {
+    if (ns === this.ns) return;
+    this.ns = ns; this.epoch++;
+    this.unsubs.splice(0).forEach(u => { try { if (typeof u === 'function') u(); } catch {} });
+    this.accounts = new Map(); this.movements = new Map();
+    if (this.mode === 'db') { this.watchAccounts(); this.watchMovements(); }
+    else if (this.mode === 'local') this.loadLocal();
+    changed();
+  },
   useLocal() {
     this.mode = 'local';
     let data = null;
     try { data = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch { data = null; }
     this.local = data && typeof data === 'object' ? data : { accounts: {}, history: {}, settings: {} };
     this.local.accounts ||= {}; this.local.history ||= {}; this.local.settings ||= {};
-    this.accounts = new Map(Object.entries(this.local.accounts).map(([id, a]) => [id, { ...a, id }]));
     this.local.movements ||= {};
-    this.movements = new Map(Object.entries(this.local.movements).map(([id, m]) => [id, { ...m, id }]));
     this.settings = { ...this.settings, ...this.local.settings };
+    this.loadLocal();
+  },
+  loadLocal() {
+    const b = this.bucket();
+    this.accounts = new Map(Object.entries(b.accounts).map(([id, a]) => [id, { ...a, id }]));
+    this.movements = new Map(Object.entries(b.movements).map(([id, m]) => [id, { ...m, id }]));
     changed();
   },
   persistLocal() {
@@ -701,10 +740,10 @@ const Store = {
     if (this.mode === 'db') {
       const prev = this.accounts.get(id);
       this.accounts.set(id, a); changed();
-      try { await this.db.collection('accounts').doc(id).set(data); }
+      try { await this.db.collection(this.col('accounts')).doc(id).set(data); }
       catch (e) { if (prev) this.accounts.set(id, prev); else this.accounts.delete(id); changed(); throw e; }
     } else {
-      this.local.accounts[id] = data; this.accounts.set(id, a); this.persistLocal(); changed();
+      this.bucket().accounts[id] = data; this.accounts.set(id, a); this.persistLocal(); changed();
     }
   },
   async removeAccount(id) {
@@ -712,34 +751,36 @@ const Store = {
       const prev = this.accounts.get(id);
       this.accounts.delete(id); changed();
       try {
-        for (const m of this.movementsOf(id)) { this.movements.delete(m.id); await this.db.collection('movements').doc(m.id).delete(); }
-        await this.db.collection('accounts').doc(id).delete(); await this.db.doc('history/' + id).delete();
+        for (const m of this.movementsOf(id)) { this.movements.delete(m.id); await this.db.collection(this.col('movements')).doc(m.id).delete(); }
+        await this.db.collection(this.col('accounts')).doc(id).delete(); await this.db.doc(this.col('history') + '/' + id).delete();
       }
       catch (e) { if (prev) this.accounts.set(id, prev); changed(); throw e; }
     } else {
-      delete this.local.accounts[id]; delete this.local.history[id]; this.accounts.delete(id);
-      for (const m of this.movementsOf(id)) { delete this.local.movements[m.id]; this.movements.delete(m.id); }
+      const b = this.bucket();
+      delete b.accounts[id]; delete b.history[id]; this.accounts.delete(id);
+      for (const m of this.movementsOf(id)) { delete b.movements[m.id]; this.movements.delete(m.id); }
       this.persistLocal(); changed();
     }
   },
   async getHistory(id) {
     if (this.mode === 'db') {
-      try { const s = await this.db.doc('history/' + id).get(); return s.exists ? (s.data().events || []) : []; } catch { return null; }
+      try { const s = await this.db.doc(this.col('history') + '/' + id).get(); return s.exists ? (s.data().events || []) : []; } catch { return null; }
     }
-    return this.local.history[id] || [];
+    return this.bucket().history[id] || [];
   },
   addHistory(id, ev) {
     // Un único escritor por documento de historial: las escrituras se encadenan.
     const run = async () => {
       if (this.mode === 'db') {
-        const ref = this.db.doc('history/' + id);
+        const ref = this.db.doc(this.col('history') + '/' + id);
         const s = await ref.get();
         const events = s.exists ? [...(s.data().events || [])] : [];
         events.unshift(ev);
         await ref.set({ events: events.slice(0, 300) });
       } else {
-        const list = this.local.history[id] || [];
-        list.unshift(ev); this.local.history[id] = list.slice(0, 300); this.persistLocal();
+        const b = this.bucket();
+        const list = b.history[id] || [];
+        list.unshift(ev); b.history[id] = list.slice(0, 300); this.persistLocal();
       }
     };
     const p = (this.histQueue.get(id) || Promise.resolve()).then(run).catch(() => {});
@@ -753,21 +794,21 @@ const Store = {
     const { id, ...data } = m;
     this.movements.set(id, m); changed();
     try {
-      if (this.mode === 'db') await this.db.collection('movements').doc(id).set(data);
-      else { this.local.movements[id] = data; if (!this.persistLocal()) throw new Error('sin espacio'); }
+      if (this.mode === 'db') await this.db.collection(this.col('movements')).doc(id).set(data);
+      else { this.bucket().movements[id] = data; if (!this.persistLocal()) throw new Error('sin espacio'); }
     } catch (e) {
-      this.movements.delete(id); if (this.mode !== 'db') delete this.local.movements[id]; changed();
+      this.movements.delete(id); if (this.mode !== 'db') delete this.bucket().movements[id]; changed();
       throw e;
     }
   },
   async removeMovement(id) {
     this.movements.delete(id); changed();
-    if (this.mode === 'db') await this.db.collection('movements').doc(id).delete();
-    else { delete this.local.movements[id]; this.persistLocal(); }
+    if (this.mode === 'db') await this.db.collection(this.col('movements')).doc(id).delete();
+    else { delete this.bucket().movements[id]; this.persistLocal(); }
   },
   async putHistory(id, events) {
-    if (this.mode === 'db') await this.db.doc('history/' + id).set({ events });
-    else { this.local.history[id] = events; this.persistLocal(); }
+    if (this.mode === 'db') await this.db.doc(this.col('history') + '/' + id).set({ events });
+    else { this.bucket().history[id] = events; this.persistLocal(); }
   },
   async saveSettings(s) {
     const prev = this.settings;
@@ -954,6 +995,15 @@ const Sync = {
         for (const [id, v] of Object.entries(src)) if (ID_RE.test(id) && v) out[c + '/' + id] = c === 'history' ? { events: Array.isArray(v) ? v.slice(0, 300) : [] } : v;
       }
     }
+    // Datos de WALLAPOP: viven dentro del mismo registro local, bajo «wallapop».
+    let wl = null;
+    try { wl = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch {}
+    const w = wl && wl.wallapop;
+    if (w && typeof w === 'object') for (const c of ['accounts', 'history', 'movements']) {
+      for (const [id, v] of Object.entries(w[c] && typeof w[c] === 'object' ? w[c] : {})) {
+        if (ID_RE.test(id) && v) out['wallapop-' + c + '/' + id] = c === 'history' ? { events: Array.isArray(v) ? v.slice(0, 300) : [] } : v;
+      }
+    }
     return out;
   },
   /** Al unirse desde un navegador con datos propios, ofrece añadirlos (una sola vez). */
@@ -964,7 +1014,7 @@ const Sync = {
     const local = this.localDocs();
     const todo = Object.entries(local).filter(([k]) => !this.docs[k] && k !== 'settings/main');
     if (!this.docs['settings/main'] && local['settings/main']) todo.push(['settings/main', local['settings/main']]);
-    const nA = todo.filter(([k]) => k.startsWith('accounts/')).length, nD = todo.filter(([k]) => k.startsWith('debts/')).length;
+    const nA = todo.filter(([k]) => /^(wallapop-)?accounts\//.test(k)).length, nD = todo.filter(([k]) => k.startsWith('debts/')).length;
     const nM = todo.filter(([k]) => /^(purchases|stockSales|supplierPayments)\//.test(k)).length;
     if (!nA && !nD && !nM) {
       todo.forEach(([k, v]) => { const i = k.indexOf('/'); this.write(k.slice(0, i), k.slice(i + 1), v); });
@@ -1123,7 +1173,7 @@ const Sync = {
   },
   createFlow() {
     const local = this.localDocs();
-    const nA = Object.keys(local).filter(k => k.startsWith('accounts/')).length, nD = Object.keys(local).filter(k => k.startsWith('debts/')).length;
+    const nA = Object.keys(local).filter(k => /^(wallapop-)?accounts\//.test(k)).length, nD = Object.keys(local).filter(k => k.startsWith('debts/')).length;
     const nM = Object.keys(local).filter(k => /^(purchases|stockSales|supplierPayments)\//.test(k)).length;
     return this.form('syNew', 'Sincronizar tus dispositivos', `
       <p style="margin:0;color:var(--fg-2)">Tus datos se guardarán <b>cifrados</b> en tu GitHub y los verás iguales en el móvil y en el ordenador. Esto solo se hace una vez, en este dispositivo.</p>
@@ -1530,7 +1580,7 @@ function cardHtml(a) {
   const s = SIM[simStatus(a)];
   return `<article class="acard" data-row="${esc(a.id)}" style="--st:${COLOR[t]}" tabindex="0" aria-label="Cuenta ${esc(a.name)}">
     <div class="ac-top">${avatar(a)}
-      <div class="ac-id"><h3 title="${esc(a.name)}">${esc(a.name)}</h3>${a.vintedUser ? `<span class="handle">@${esc(a.vintedUser)}</span>` : '<span class="muted" style="font-size:12.5px">Sin usuario de Vinted</span>'}</div>
+      <div class="ac-id"><h3 title="${esc(a.name)}">${esc(a.name)}</h3>${a.vintedUser ? `<span class="handle">@${esc(a.vintedUser)}</span>` : `<span class="muted" style="font-size:12.5px">Sin usuario de ${PLAT()}</span>`}</div>
       ${pillSelect(a, 'accountStatus')}</div>
     <div class="ac-money">
       <div><span class="l">Retirado</span><b class="${a.withdrawn ? 'c-g' : 'muted'}">${money(a.withdrawn)}</b></div>
@@ -1544,10 +1594,10 @@ function cardHtml(a) {
       <li>${ICON.phone}<span class="txt">${a.deviceModel ? esc(a.deviceModel) : '<span class="muted">Móvil sin modelo</span>'}</span>${pillSelect(a, 'phoneStatus')}</li>
     </ul>
     <div class="ac-foot">
-      <button class="qbtn" type="button" data-copy="vintedUser" data-id="${esc(a.id)}" ${a.vintedUser ? '' : 'disabled'} title="Copiar usuario de Vinted">${small(ICON.copy)}Usuario</button>
-      <button class="qbtn" type="button" data-copy="vintedPassword" data-id="${esc(a.id)}" ${hasField(a, 'vintedPassword') ? '' : 'disabled'} title="${Vault.unlocked ? 'Copiar contraseña de Vinted' : 'Desbloquea para copiar la contraseña'}">${small(Vault.unlocked ? ICON.copy : ICON.lock)}Contraseña</button>
+      <button class="qbtn" type="button" data-copy="vintedUser" data-id="${esc(a.id)}" ${a.vintedUser ? '' : 'disabled'} title="Copiar usuario de ${PLAT()}">${small(ICON.copy)}Usuario</button>
+      <button class="qbtn" type="button" data-copy="vintedPassword" data-id="${esc(a.id)}" ${hasField(a, 'vintedPassword') ? '' : 'disabled'} title="${Vault.unlocked ? 'Copiar contraseña de ' + PLAT() : 'Desbloquea para copiar la contraseña'}">${small(Vault.unlocked ? ICON.copy : ICON.lock)}Contraseña</button>
       <button class="qbtn" type="button" data-copy="email" data-id="${esc(a.id)}" ${a.email ? '' : 'disabled'} title="Copiar correo">${small(ICON.copy)}Correo</button>
-      <span class="ring" style="--p:${pct};--rc:${pct === 100 ? 'var(--green)' : 'var(--orange)'}" title="${miss.length ? 'Falta: ' + miss.map(m => m[1]).join(', ') : 'Datos completos'}"><span>${done}/${COMPLETE.length}</span></span>
+      <span class="ring" style="--p:${pct};--rc:${pct === 100 ? 'var(--green)' : 'var(--orange)'}" title="${miss.length ? 'Falta: ' + miss.map(m => String(m[1])).join(', ') : 'Datos completos'}"><span>${done}/${COMPLETE.length}</span></span>
     </div>
   </article>`;
 }
@@ -1580,10 +1630,10 @@ function renderList() {
   const total = Store.accounts.size;
   if (!total) {
     area.innerHTML = `<div class="empty"><div class="badge-i">${ICON.users}</div><h3>Aún no hay cuentas registradas</h3>
-      <p>Cada cuenta guarda su acceso a Vinted, su correo, la SIM y el móvil, y el dinero retirado y pendiente.</p>
+      <p>Cada cuenta guarda su acceso a ${PLAT()}, su correo, la SIM y el móvil, y el dinero retirado y pendiente.</p>
       <div class="row"><button class="btn primary" type="button" data-act="add">${ICON.plus}Añadir la primera cuenta</button><button class="btn" type="button" data-act="import">Importar CSV</button></div>
       <div class="steps">
-        <div><span class="ico b">${ICON.user}</span><span><b>1. Accesos</b>Usuario y contraseña de Vinted, correo y su contraseña.</span></div>
+        <div><span class="ico b">${ICON.user}</span><span><b>1. Accesos</b>Usuario y contraseña de ${PLAT()}, correo y su contraseña.</span></div>
         <div><span class="ico">${ICON.sim}</span><span><b>2. SIM y móvil</b>Número, operador, PIN, PUK y código de bloqueo.</span></div>
         <div><span class="ico g">${ICON.euro}</span><span><b>3. Dinero</b>Saldo retirado y pendiente. Los totales se calculan solos.</span></div>
       </div></div>`;
@@ -1664,16 +1714,16 @@ function openForm(id, focusSection) {
   const root = openLayer(`
   <form class="modal wide" id="accForm" novalidate aria-labelledby="formTitle">
     <div class="modal-h"><h2 id="formTitle">${editing ? 'Editar ' + esc(editing.name) : 'Añadir cuenta'}</h2><button class="icon-btn sm" type="button" data-close aria-label="Cerrar">${ICON.x}</button></div>
-    <nav class="fnav" aria-label="Secciones"><a href="#sec-vinted">Vinted</a><a href="#sec-mail">Correo</a><a href="#sec-sim">SIM y teléfono</a><a href="#sec-mobile">Móvil</a><a href="#sec-money">Dinero</a><a href="#sec-notes">Fechas y notas</a></nav>
+    <nav class="fnav" aria-label="Secciones"><a href="#sec-vinted">${PLAT()}</a><a href="#sec-mail">Correo</a><a href="#sec-sim">SIM y teléfono</a><a href="#sec-mobile">Móvil</a><a href="#sec-money">Dinero</a><a href="#sec-notes">Fechas y notas</a></nav>
     <div class="modal-b">
       <div id="formAlert"></div>
       <div id="formVault"></div>
-      ${sec('vinted', ICON.user, 'b', 'Cuenta de Vinted', 'Cómo identificas la cuenta y cómo entras en ella', `<div class="grid2">
+      ${sec('vinted', ICON.user, 'b', `Cuenta de ${PLAT()}`, 'Cómo identificas la cuenta y cómo entras en ella', `<div class="grid2">
         <div class="fg" data-f="name"><label for="f-name">Nombre o identificador</label><input class="field" id="f-name" maxlength="80" value="${esc(a.name)}" autocomplete="off" placeholder="Ej.: Cuenta 7" autofocus><span class="err"></span></div>
-        <div class="fg" data-f="vintedUser"><label for="f-vintedUser">Usuario de Vinted</label><input class="field" id="f-vintedUser" maxlength="80" value="${esc(a.vintedUser)}" autocomplete="off" spellcheck="false"><span class="err"></span></div>
-        ${pwField('vintedPassword', 'Contraseña de Vinted')}
+        <div class="fg" data-f="vintedUser"><label for="f-vintedUser">Usuario de ${PLAT()}</label><input class="field" id="f-vintedUser" maxlength="80" value="${esc(a.vintedUser)}" autocomplete="off" spellcheck="false"><span class="err"></span></div>
+        ${pwField('vintedPassword', `Contraseña de ${PLAT()}`)}
         <div class="fg"><span class="lbl">Estado de la cuenta</span>${seg('f-acc', ACC, a.accountStatus)}</div></div>`)}
-      ${sec('mail', ICON.mail, 'b', 'Correo electrónico', 'El correo asociado a la cuenta de Vinted', `<div class="grid2">
+      ${sec('mail', ICON.mail, 'b', 'Correo electrónico', `El correo asociado a la cuenta de ${PLAT()}`, `<div class="grid2">
         <div class="fg" data-f="email"><label for="f-email">Correo electrónico</label><input class="field" id="f-email" type="email" maxlength="120" value="${esc(a.email)}" autocomplete="off" spellcheck="false" inputmode="email"><span class="err"></span></div>
         ${pwField('emailPassword', 'Contraseña del correo')}</div>`)}
       ${sec('sim', ICON.sim, '', 'SIM y teléfono', 'Número, operador, estado y códigos de la SIM', `<div class="grid2">
@@ -1766,7 +1816,7 @@ function openForm(id, focusSection) {
     const dupUser = vintedUser && !(editing && norm(editing.vintedUser) === norm(vintedUser)) && others.find(x => norm(x.vintedUser) === norm(vintedUser));
     const dupMail = email && !(editing && norm(editing.email) === norm(email)) && others.find(x => norm(x.email) === norm(email));
     if (dupPhone) warns.push(`El teléfono ya está en <b>${esc(dupPhone.name)}</b>.`);
-    if (dupUser) warns.push(`El usuario de Vinted ya está en <b>${esc(dupUser.name)}</b>.`);
+    if (dupUser) warns.push(`El usuario de ${PLAT()} ya está en <b>${esc(dupUser.name)}</b>.`);
     if (dupMail) warns.push(`El correo ya está en <b>${esc(dupMail.name)}</b>.`);
     const sig = warns.join('|');
     if (warns.length && warned !== sig) {
@@ -1848,7 +1898,7 @@ function renderHistory() {
   if (!h.length) { box.innerHTML = '<p class="muted" style="margin:0">Sin cambios registrados todavía.</p>'; return; }
   const kindLabel = { create:'Cuenta creada', edit:'Edición', quick:'Cambio rápido de estado', import:'Importada desde CSV', saldo:'Movimiento de saldo' };
   box.innerHTML = `<ul class="timeline">${h.map(ev => `<li><div class="when">${esc(fmtDateTime(ev.at))} · ${kindLabel[ev.kind] || 'Cambio'}</div>${(ev.changes || []).map(c => {
-    const lab = FIELD_LABEL[c.f] || c.f;
+    const lab = fieldLabel(c.f) || c.f;
     if (c.note) return `<div class="chg">Notas actualizadas</div>`;
     if (c.secret) return `<div class="chg">${lab}: <b>actualizada</b></div>`;
     if (ev.kind === 'create' || ev.kind === 'import') return `<div class="chg">${lab}: <b>${esc(fmtField(c.f, c.to))}</b></div>`;
@@ -1988,7 +2038,7 @@ function plainRow(label, field, value, shown, maskFn) {
     <span class="b">${maskFn ? `<button class="icon-btn sm" type="button" data-dact="reveal" data-f="${field}" aria-label="${shown ? 'Ocultar' : 'Mostrar'} ${label}" title="${shown ? 'Ocultar' : 'Mostrar'}">${shown ? ICON.eyeOff : ICON.eye}</button>` : ''}<button class="icon-btn sm" type="button" data-dact="copy" data-f="${field}" aria-label="Copiar ${label}" title="Copiar">${ICON.copy}</button></span></div>`;
 }
 function secretRow(a, k) {
-  const label = SECRET[k];
+  const label = secretLabel(k);
   if (!hasField(a, k)) return `<div class="srow"><span class="l">${label}</span><span class="v muted">Sin guardar</span></div>`;
   if (!Vault.unlocked) return `<div class="srow"><span class="l">${label}</span><span class="v secret muted">•••••••• bloqueada</span></div>`;
   const shown = detailReveal.has(k), val = detailSecrets ? (detailSecrets[k] || '') : null;
@@ -2022,7 +2072,7 @@ function renderDetail() {
         <div class="fig"><span class="l">Retirado sobre total</span><span class="v">${tot ? Math.round((a.withdrawn || 0) / tot * 100) + ' %' : '—'}</span></div>
         <div class="fig est"><span class="l">Balance neto estimado<span class="tag">Estimación</span></span><span class="v c-b">${money(net)}</span><span class="l">Dinero total menos coste de la SIM. No incluye otros gastos.</span></div>
       </div>
-      ${miss.length ? `<div class="alert o">${ICON.note}<p>Falta: ${miss.map(m => m[1]).join(', ')}. <button class="link-btn" type="button" data-dact="edit">Completar ficha</button></p></div>` : ''}
+      ${miss.length ? `<div class="alert o">${ICON.note}<p>Falta: ${miss.map(m => String(m[1])).join(', ')}. <button class="link-btn" type="button" data-dact="edit">Completar ficha</button></p></div>` : ''}
       ${movementsBlock(a)}
       <div class="d-sec"><h4>Fechas</h4>
         <dl class="kv"><dt>Fecha de registro</dt><dd class="num">${fmtDate(a.registeredAt)}${days !== null && days >= 0 ? ` <span class="muted">(hace ${days} ${days === 1 ? 'día' : 'días'})</span>` : ''}</dd>
@@ -2034,8 +2084,8 @@ function renderDetail() {
   } else if (tab === 'accesos') {
     body = `
       ${['vintedPassword', 'emailPassword'].some(k => hasField(a, k)) ? vaultBox() : ''}
-      <div class="cred"><div class="cred-h"><span class="ico b">${ICON.user}</span>Vinted</div>
-        ${plainRow('Usuario de Vinted', 'vintedUser', a.vintedUser, true)}
+      <div class="cred"><div class="cred-h"><span class="ico b">${ICON.user}</span>${PLAT()}</div>
+        ${plainRow('Usuario de ' + PLAT(), 'vintedUser', a.vintedUser, true)}
         ${secretRow(a, 'vintedPassword')}</div>
       <div class="cred"><div class="cred-h"><span class="ico b">${ICON.mail}</span>Correo electrónico</div>
         ${plainRow('Correo', 'email', a.email, detailReveal.has('email'), maskEmail)}
@@ -2076,8 +2126,8 @@ $('#layer').addEventListener('click', e => {
   const id = UI.detailId, a = Store.accounts.get(id); if (!a) return;
   const act = b.dataset.dact, f = b.dataset.f;
   if (act === 'reveal') { detailReveal.has(f) ? detailReveal.delete(f) : detailReveal.add(f); renderDetail(); }
-  if (act === 'copy') copyText(a[f], FIELD_LABEL[f] || 'Dato');
-  if (act === 'copysecret' && detailSecrets && detailSecrets[f]) copyText(detailSecrets[f], SECRET[f]);
+  if (act === 'copy') copyText(a[f], fieldLabel(f) || 'Dato');
+  if (act === 'copysecret' && detailSecrets && detailSecrets[f]) copyText(detailSecrets[f], secretLabel(f));
   if (act === 'edit') openForm(id, UI.detailTab === 'accesos' ? 'vinted' : UI.detailTab === 'sim' ? 'sim' : null);
   if (act === 'movement') openMovement(id);
   if (act === 'delete') confirmDelete(id);
@@ -2086,10 +2136,10 @@ $('#layer').addEventListener('click', e => {
 /* ---------- Copia rápida desde las fichas ---------- */
 async function quickCopy(id, field) {
   const a = Store.accounts.get(id); if (!a) return;
-  if (!SECRET[field]) return copyText(a[field], FIELD_LABEL[field]);
+  if (!SECRET[field]) return copyText(a[field], fieldLabel(field));
   if (!Vault.unlocked) { openDetail(id, 'accesos'); return; }
   const s = await Vault.read(a);
-  if (s && s[field]) copyText(s[field], SECRET[field]);
+  if (s && s[field]) copyText(s[field], secretLabel(field));
   else toast('No se pudo descifrar la contraseña', true);
 }
 
@@ -2160,7 +2210,7 @@ const csvCell = v => { const s = String(v ?? ''); return /[";\n\r]/.test(s) ? '"
 async function buildCsv(withSecrets) {
   const rows = [...Store.accounts.values()].sort((a, b) => (a.registeredAt || '').localeCompare(b.registeredAt || ''));
   const cols = withSecrets ? CSV_BASE.concat(CSV_SECRET) : CSV_BASE;
-  const lines = [cols.map(c => c[1]).join(';')];
+  const lines = [cols.map(c => c[1].replace('Vinted', PLAT())).join(';')];
   for (const a of rows) {
     const s = withSecrets ? (await Vault.read(a)) || {} : {};
     const val = k => {
@@ -2198,7 +2248,7 @@ function openExport() {
   });
 }
 async function saveCsv(csv) {
-  const filename = `cuentas-vinted-${today()}.csv`;
+  const filename = `cuentas-${Store.ns || 'vinted'}-${today()}.csv`;
   let dl = null;
   try { dl = window.claude && await window.claude.use('downloads'); } catch { dl = null; }
   if (dl) {
@@ -2354,6 +2404,7 @@ const txt = (v, max) => typeof v === 'string' ? v.slice(0, max) : '';
 const cents = v => Number.isSafeInteger(v) && v >= 0 && v <= MAX_CENTS ? v : 0;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const signed = v => Number.isSafeInteger(v) && Math.abs(v) <= MAX_CENTS ? v : 0;
+const appId = () => (Store.ns === 'wallapop' ? 'vinted-control-wallapop' : 'vinted-control');
 async function buildBackup() {
   const accounts = [...Store.accounts.values()];
   const history = {};
@@ -2363,7 +2414,7 @@ async function buildBackup() {
     if (h.length) history[a.id] = h;
   }
   const { defaultSimCost, vault } = Store.settings;
-  return { app: 'vinted-control', format: 3, exportedAt: new Date().toISOString(), settings: { defaultSimCost, vault }, accounts, history, movements: [...Store.movements.values()] };
+  return { app: appId(), format: 3, exportedAt: new Date().toISOString(), settings: { defaultSimCost, vault }, accounts, history, movements: [...Store.movements.values()] };
 }
 function cleanAccount(a, now) {
   const pick = (map, v, dflt) => Object.hasOwn(map, v) ? v : dflt;
@@ -2408,7 +2459,7 @@ async function saveBackup(btn) {
   let text;
   try { text = JSON.stringify(await buildBackup(), null, 2); }
   catch { btn.disabled = false; toast('No se pudo preparar la copia. Inténtalo de nuevo.', true); return; }
-  const filename = `copia-control-vinted-${today()}.json`;
+  const filename = `copia-control-${Store.ns || 'vinted'}-${today()}.json`;
   let dl = null;
   try { dl = window.claude && await window.claude.use('downloads'); } catch { dl = null; }
   if (dl) {
@@ -2436,7 +2487,7 @@ function readBackup(file) {
   rd.onload = () => {
     let data = null;
     try { data = JSON.parse(String(rd.result || '')); } catch { data = null; }
-    if (!data || data.app !== 'vinted-control' || !Array.isArray(data.accounts)) { toast('Ese archivo no es una copia de este panel', true); return; }
+    if (!data || data.app !== appId() || !Array.isArray(data.accounts)) { toast('Ese archivo no es una copia de este panel', true); return; }
     const now = new Date().toISOString();
     const valid = data.accounts.filter(a => a && typeof a === 'object' && ID_RE.test(String(a.id || '')) && typeof a.name === 'string' && a.name.trim()).map(a => cleanAccount(a, now));
     const skipped = data.accounts.length - valid.length;
@@ -3113,20 +3164,33 @@ renderDebtKpis(); renderDebtFilters();
    nunca se editan, así dos dispositivos no se pisan el historial.
    ========================================================================== */
 
-/* ---------- Pestañas principales ---------- */
+/* ---------- Pestañas principales ----------
+   VINTED y WALLAPOP usan la misma pantalla de cuentas, cada una con sus propios datos. */
 const TAB_KEY = 'vinted-control.tab';
-const TABS = ['vinted', 'deudas', 'merc'];
+const TABS = ['vinted', 'wallapop', 'deudas', 'merc'];
+const TAB_VIEW = { vinted: 'vinted', wallapop: 'vinted', deudas: 'deudas', merc: 'merc' };
+const PLAT = () => (Store.ns === 'wallapop' ? 'Wallapop' : 'Vinted');
+function applyPlatform() {
+  const p = PLAT();
+  $('#appTitle').textContent = `Control de cuentas ${p}`;
+  document.title = `Control de cuentas ${p}`;
+  $('#q').placeholder = `Buscar por cuenta, usuario de ${p}, correo o teléfono`;
+}
 function showTab(t, focus) {
-  for (const v of TABS) $('#view-' + v).hidden = t !== v;
+  const view = TAB_VIEW[t] || 'vinted';
+  for (const v of ['vinted', 'deudas', 'merc']) $('#view-' + v).hidden = view !== v;
   $$('[data-main-tab]').forEach(b => { const on = b.dataset.mainTab === t; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; });
   try { localStorage.setItem(TAB_KEY, t); } catch {}
+  closeLayer();
+  Store.switchNs(t === 'wallapop' ? 'wallapop' : '');
+  applyPlatform();
   if (focus) $(`[data-main-tab="${t}"]`).focus();
 }
 $('#mainTabs').addEventListener('click', e => { const b = e.target.closest('[data-main-tab]'); if (b) showTab(b.dataset.mainTab); });
 $('#mainTabs').addEventListener('keydown', e => {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   e.preventDefault();
-  const cur = TABS.find(t => !$('#view-' + t).hidden) || 'vinted';
+  const cur = $('#mainTabs [aria-selected="true"]').dataset.mainTab;
   showTab(TABS[(TABS.indexOf(cur) + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length], true);
 });
 {
