@@ -362,6 +362,59 @@ textarea.field{resize:vertical;min-height:84px}
 @media (max-width:420px){ .maintabs{gap:2px;padding:4px} .maintabs button{padding:10px 2px;font-size:11px;letter-spacing:0;min-width:0} .maintabs .em{display:none} }
 .split .av,.track .av{background:var(--blue)}
 .mv-list{max-height:320px;overflow:auto;padding-right:4px}
+/* Resumen mensual */
+.mchips{display:flex;gap:6px;flex-wrap:wrap}
+.mgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);gap:16px;align-items:start}
+.mside{display:flex;flex-direction:column;gap:10px;min-width:0}
+.mhero{display:flex;flex-direction:column;gap:4px;padding:14px 16px;border-radius:12px;background:linear-gradient(160deg,#1e2228 0%,#181b20 70%);border:1px solid var(--line-2)}
+.mlab{font-size:12.5px;color:var(--fg-2);font-weight:500}
+.mbig{font-family:var(--f-display);font-weight:600;font-size:clamp(26px,3vw,34px);letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums;color:var(--orange)}
+.mnote{font-size:12px}
+.mdelta{font-size:12px;color:var(--muted)}
+.mdelta.c-g{color:var(--green)} .mdelta.c-r{color:var(--red)}
+.mtiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.mtile{background:var(--bg-2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.mt-h{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--fg-2)}
+.mt-h .ico{width:26px;height:26px;border-radius:8px}
+.mt-h .ico svg{width:15px;height:15px}
+.mt-v{font-family:var(--f-display);font-weight:600;font-size:19px;letter-spacing:-.01em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.mneto{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border:1px dashed var(--line-2);border-radius:12px;padding:10px 12px;font-size:13px}
+.mneto b{font-family:var(--f-display);font-size:17px;font-variant-numeric:tabular-nums}
+.mmain{display:flex;flex-direction:column;gap:10px;min-width:0}
+.mchart{width:100%;height:auto;display:block}
+.mchart .grid{stroke:var(--line);stroke-width:1;stroke-dasharray:3 4}
+.mchart .base{stroke:var(--line-2);stroke-width:1}
+.mchart .ax{fill:var(--muted);font-size:10.5px;font-family:var(--f-body)}
+.mchart .mx{fill:var(--fg-2);font-size:11.5px;font-family:var(--f-body);text-transform:capitalize}
+.mchart .vl{fill:var(--fg);font-size:10.5px;font-weight:600;font-family:var(--f-body)}
+.mchart .hit{fill:transparent}
+.mchart .mgroup{cursor:pointer;outline:none}
+.mchart .mgroup:hover .hit{fill:rgba(255,255,255,.03)}
+.mchart .mgroup.on .hit{fill:rgba(255,255,255,.05)}
+.mchart .mgroup:focus-visible .hit{stroke:var(--blue);stroke-width:2}
+.mchart .mgroup.on .mx{fill:var(--fg);font-weight:600}
+.mchart .mgroup:not(.on) rect:not(.hit){opacity:.55}
+.b-nuevo{fill:var(--orange)} .b-alta{fill:var(--fg-2);opacity:.4} .b-cobrado{fill:var(--blue)} .b-retirado{fill:var(--green)}
+.mchart .mgroup:not(.on) .b-alta{opacity:.25}
+.mgrid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:16px;align-items:start;border-top:1px solid var(--line);padding-top:14px}
+.mh3{font-family:var(--f-display);font-size:13.5px;font-weight:600;margin:0 0 10px;color:var(--fg-2)}
+.mrows{display:flex;flex-direction:column;gap:4px}
+.mrow{display:grid;grid-template-columns:minmax(0,1.5fr) repeat(4,minmax(0,1fr));gap:8px;align-items:center;padding:8px 10px;border-radius:10px;border:1px solid transparent;background:none;text-align:right;font-size:13px}
+.mrow > span:first-child{text-align:left;display:flex;flex-direction:column;gap:1px;min-width:0}
+.mrow small{font-size:11.5px}
+.mrow-h{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding-block:2px}
+button.mrow{color:inherit} button.mrow:hover{background:var(--bg-2)}
+.mrow.on{background:var(--bg-2);border-color:var(--line-2)}
+.mfoot{font-size:12px;margin:0}
+@media (max-width:980px){ .mgrid,.mgrid2{grid-template-columns:1fr} }
+@media (max-width:560px){
+  .mrow{grid-template-columns:minmax(0,1fr) minmax(0,1fr);text-align:left}
+  .mrow > span:first-child{grid-column:1/-1}
+  .mrow-h{display:none}
+  .mrow > span.num::before{display:block;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+  .mrow > span:nth-child(2)::before{content:'Nuevo'} .mrow > span:nth-child(3)::before{content:'Disponible'}
+  .mrow > span:nth-child(4)::before{content:'Retirado'} .mrow > span:nth-child(5)::before{content:'Neto'}
+}
 @media (max-width:1080px){ .kpis{grid-template-columns:repeat(2,minmax(0,1fr))} .overview{grid-template-columns:1fr} }
 @media (max-width:780px){
   .table-wrap{overflow:visible}
@@ -421,6 +474,7 @@ textarea.field{resize:vertical;min-height:84px}
 
   <section class="kpis" id="kpis" aria-label="Resumen"></section>
   <section class="overview" id="overview" aria-label="Panorama" hidden></section>
+  <section class="monthly" id="monthly" aria-label="Resumen mensual" hidden></section>
 
   <section class="panel" aria-label="Cuentas">
     <div class="toolbar">
@@ -785,7 +839,7 @@ const Store = {
     };
     const p = (this.histQueue.get(id) || Promise.resolve()).then(run).catch(() => {});
     this.histQueue.set(id, p);
-    return p.then(() => { if (UI.detailId === id) loadHistory(id); });
+    return p.then(() => { monthInvalidate(id); if (UI.detailId === id) loadHistory(id); });
   },
   movementsOf(id) { return [...this.movements.values()].filter(m => m.accountId === id); },
   /** Un movimiento es un registro nuevo e inmutable: no se sobrescribe ni se recorta nunca. */
@@ -809,6 +863,7 @@ const Store = {
   async putHistory(id, events) {
     if (this.mode === 'db') await this.db.doc(this.col('history') + '/' + id).set({ events });
     else { this.bucket().history[id] = events; this.persistLocal(); }
+    monthInvalidate(id);
   },
   async saveSettings(s) {
     const prev = this.settings;
@@ -1543,6 +1598,210 @@ function renderOverview() {
     </div>`;
 }
 
+/* ---------- Resumen mensual: cómo ha ido cada mes (por plataforma) ----------
+   Solo lee datos: movimientos de saldo (por su fecha) y el historial de cada cuenta (por la fecha del cambio).
+   El historial se carga una vez por cuenta y se vuelve a leer cuando la cuenta cambia. */
+const MES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const monthName = (k, short) => { const [y, m] = k.split('-').map(Number); const n = MES[m - 1] || k; return short ? n.slice(0, 3) : n[0].toUpperCase() + n.slice(1) + ' ' + y; };
+const localMonth = iso => { const d = new Date(iso); return isNaN(d) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+const shiftMonth = (k, n) => { const [y, m] = k.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+const MonthUI = { ns: null, epoch: -1, sel: null, hist: new Map(), busy: new Set(), timers: new Set() };
+function monthReset() {
+  MonthUI.ns = Store.ns; MonthUI.epoch = Store.epoch; MonthUI.sel = null; MonthUI.hist = new Map(); MonthUI.busy = new Set();
+  MonthUI.timers.forEach(clearTimeout); MonthUI.timers.clear();
+}
+/** Marca el historial de una cuenta para volver a leerlo. */
+function monthInvalidate(id) { if (MonthUI.ns === Store.ns) { MonthUI.hist.delete(id); renderMonthly(); } }
+/** Lee el historial de las cuentas que faltan o han cambiado. Devuelve true si ya está todo. */
+function monthEnsure() {
+  if (Store.mode === 'loading') return false;
+  if (MonthUI.ns !== Store.ns || MonthUI.epoch !== Store.epoch) monthReset();
+  let ready = true;
+  for (const a of Store.accounts.values()) {
+    const c = MonthUI.hist.get(a.id), u = a.updatedAt || '';
+    if (c && c.u === u) continue;
+    ready = false;
+    if (MonthUI.busy.has(a.id)) continue;
+    MonthUI.busy.add(a.id);
+    const epoch = Store.epoch, again = !!c;
+    Store.getHistory(a.id).then(ev => {
+      if (epoch !== Store.epoch) return;
+      MonthUI.busy.delete(a.id);
+      MonthUI.hist.set(a.id, { u, ev: Array.isArray(ev) ? ev : [], err: ev === null });
+      // Si el cambio llegó de otro dispositivo, su historial puede guardarse unos segundos después.
+      if (again && Store.mode === 'db') {
+        const t = setTimeout(() => { MonthUI.timers.delete(t); if (epoch === Store.epoch) monthInvalidate(a.id); }, 4000);
+        MonthUI.timers.add(t);
+      }
+      renderMonthly();
+    });
+  }
+  return ready;
+}
+const numOr0 = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+/** Cifras por mes. «nuevo» = dinero nuevo (ventas añadidas al pendiente, dinero que llegó sin estar en el pendiente y subidas
+    del retirado o del pendiente al editar). «alta» = saldo que ya tenía una cuenta al darla de alta (va aparte). */
+function monthlyData() {
+  const map = new Map();
+  const get = k => {
+    if (!map.has(k)) map.set(k, { k, nuevo: 0, alta: 0, retirado: 0, cobrado: 0, ventas: 0, cuentas: 0, sim: 0, baneadas: 0, acc: new Map() });
+    return map.get(k);
+  };
+  const give = (g, id, v) => { if (v) g.acc.set(id, (g.acc.get(id) || 0) + v); };
+  for (const m of Store.movements.values()) {
+    if (!Store.accounts.has(m.accountId)) continue;
+    const g = get(String(m.date || m.at || '').slice(0, 7) || localMonth(m.at)), amt = numOr0(m.amount);
+    if (m.type === 'pendiente') { g.ventas += amt; g.nuevo += amt; give(g, m.accountId, amt); }
+    else if (m.type === 'disponible') {
+      g.cobrado += amt;
+      const extra = Math.max(0, Math.min(amt, -numOr0(m.after && m.after.pending))); // no estaba en el pendiente
+      g.nuevo += extra; give(g, m.accountId, extra);
+    }
+  }
+  for (const a of Store.accounts.values()) {
+    const k = DATE_RE.test(a.registeredAt || '') ? a.registeredAt.slice(0, 7) : localMonth(a.createdAt);
+    if (k) { const g = get(k); g.cuentas++; g.sim += numOr0(a.simCost); }
+    for (const ev of MonthUI.hist.get(a.id)?.ev || []) {
+      const k2 = localMonth(ev.at); if (!k2 || !Array.isArray(ev.changes)) continue;
+      const g = get(k2);
+      if (ev.kind === 'create' || ev.kind === 'import') {
+        for (const c of ev.changes) if (c.f === 'withdrawn' || c.f === 'pending') g.alta += numOr0(c.to);
+        continue;
+      }
+      if (ev.kind === 'saldo') continue; // ya contado por su movimiento
+      for (const c of ev.changes) {
+        if (c.f === 'withdrawn' || c.f === 'pending') {
+          const d = numOr0(c.to) - numOr0(c.from);
+          g.nuevo += d; give(g, a.id, d);
+          if (c.f === 'withdrawn' && d > 0) g.retirado += d;
+        } else if (c.f === 'accountStatus' && c.to === 'baneada' && c.from !== 'baneada') g.baneadas++;
+      }
+    }
+  }
+  const now = localMonth(new Date().toISOString());
+  const keys = [...map.keys()].filter(k => /^\d{4}-\d{2}$/.test(k) && k <= now).sort();
+  const first = keys[0] || now, out = [];
+  for (let k = first; k <= now; k = shiftMonth(k, 1)) out.push(map.get(k) || get(k));
+  for (const g of out) g.neto = g.nuevo - g.sim;
+  return out;
+}
+const shortMoney = c => {
+  const e = (Number(c) || 0) / 100, a = Math.abs(e);
+  if (a >= 1000) return (e / 1000).toLocaleString('es-ES', { maximumFractionDigits: 1 }) + ' k€';
+  return Math.round(e).toLocaleString('es-ES') + ' €';
+};
+function monthDelta(cur, prev, prevName, upBad) {
+  if (prevName === null) return '<span class="mdelta">Primer mes con datos</span>';
+  if (!prev && !cur) return `<span class="mdelta">Igual que ${prevName}</span>`;
+  if (!prev) return `<span class="mdelta ${upBad ? 'c-r' : 'c-g'}">▲ nuevo frente a ${prevName}</span>`;
+  const p = Math.round((cur - prev) / Math.abs(prev) * 100);
+  if (!p) return `<span class="mdelta">= que ${prevName}</span>`;
+  const up = p > 0;
+  return `<span class="mdelta ${up === !upBad ? 'c-g' : 'c-r'}">${up ? '▲' : '▼'} ${Math.abs(p).toLocaleString('es-ES')} % vs ${prevName}</span>`;
+}
+function monthChart(months, sel) {
+  const narrow = window.innerWidth < 560, list = months.slice(narrow ? -6 : -12), n = list.length;
+  const W = narrow ? 340 : 640, H = narrow ? 210 : 230, L = narrow ? 40 : 46, R = 8, T = 22, B = 30, ch = H - T - B;
+  const max0 = Math.max(1, ...list.map(g => Math.max(Math.max(0, g.nuevo) + g.alta, g.retirado, g.cobrado)));
+  const step = (() => { const raw = max0 / 4, p = Math.pow(10, Math.floor(Math.log10(raw))); return [1, 2, 2.5, 5, 10].map(x => x * p).find(x => x >= raw); })();
+  const max = step * 4, y = v => T + ch - (v / max) * ch;
+  const gw = (W - L - R) / n, bw = Math.min(26, gw * 0.24), gap = Math.max(2, bw * 0.18);
+  let s = `<svg class="mchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Gráfica por mes: dinero nuevo, llegado al disponible y retirado">`;
+  for (let i = 0; i <= 4; i++) {
+    const v = step * i, yy = y(v);
+    s += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" class="${i ? 'grid' : 'base'}"/><text x="${L - 6}" y="${yy + 4}" class="ax" text-anchor="end">${shortMoney(v)}</text>`;
+  }
+  list.forEach((g, i) => {
+    const cx = L + gw * i + gw / 2, on = g.k === sel, x0 = cx - bw * 1.5 - gap;
+    const nv = Math.max(0, g.nuevo);
+    const bars = [
+      { x: x0, parts: [[g.alta, 'alta'], [nv, 'nuevo']], label: nv, top: nv + g.alta },
+      { x: x0 + bw + gap, parts: [[g.cobrado, 'cobrado']], label: g.cobrado },
+      { x: x0 + (bw + gap) * 2, parts: [[g.retirado, 'retirado']], label: g.retirado },
+    ];
+    s += `<g class="mgroup${on ? ' on' : ''}" data-month="${g.k}" tabindex="0" role="button" aria-pressed="${on}" aria-label="${monthName(g.k)}: dinero nuevo ${money(g.nuevo)}, llegó al disponible ${money(g.cobrado)}, retirado ${money(g.retirado)}">`;
+    s += `<rect class="hit" x="${L + gw * i + 2}" y="${T - 18}" width="${gw - 4}" height="${ch + 18 + B}" rx="8"/>`;
+    for (const b of bars) {
+      let acc = 0;
+      for (const [v, cls] of b.parts) {
+        if (v <= 0) continue;
+        const h = Math.max(1.5, (v / max) * ch);
+        s += `<rect class="b-${cls}" x="${b.x}" y="${y(acc + v)}" width="${bw}" height="${h}" rx="2.5"/>`;
+        acc += v;
+      }
+      if (on && b.label > 0 && n <= 6) s += `<text class="vl" x="${b.x + bw / 2}" y="${y(b.top ?? b.label) - 5}" text-anchor="middle">${shortMoney(b.label)}</text>`;
+    }
+    s += `<text class="mx" x="${cx}" y="${H - 10}" text-anchor="middle">${monthName(g.k, true)}${n <= 6 || g.k.endsWith('-01') ? ' ' + g.k.slice(2, 4) : ''}</text></g>`;
+  });
+  return s + '</svg>';
+}
+function renderMonthly() {
+  const el = $('#monthly'); if (!el) return;
+  const all = [...Store.accounts.values()];
+  el.hidden = !all.length;
+  if (!all.length) { el.innerHTML = ''; return; }
+  const ready = monthEnsure();
+  const months = monthlyData();
+  if (!months.some(g => g.k === MonthUI.sel)) MonthUI.sel = months[months.length - 1].k;
+  const i = months.findIndex(g => g.k === MonthUI.sel), g = months[i];
+  const prev = months[i - 1] || { nuevo: 0, retirado: 0, cobrado: 0, cuentas: 0, baneadas: 0, neto: 0, k: shiftMonth(g.k, -1) };
+  const pn = i > 0 ? monthName(prev.k).split(' ')[0].toLowerCase() : null;
+  const failed = [...MonthUI.hist.values()].some(c => c.err);
+  const tile = (lab, cls, val, sub, ico) => `<div class="mtile"><div class="mt-h"><span class="ico ${cls}">${ico}</span>${lab}</div><div class="mt-v ${cls ? 'c-' + cls : ''}">${val}</div>${sub}</div>`;
+  const top = [...g.acc.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const tmax = Math.max(1, ...top.map(t => t[1]));
+  const accName = id => Store.accounts.get(id)?.name || 'Cuenta';
+  el.innerHTML = `<div class="panel chart">
+    <div class="chart-h"><h2>Resumen mensual</h2><span>${ready ? `Cómo ha ido cada mes en ${PLAT()}` : 'Calculando con el historial…'}</span></div>
+    <div class="mchips" role="group" aria-label="Elegir mes">${months.slice(-12).map(m => `<button type="button" class="chip" data-month="${m.k}" aria-pressed="${m.k === g.k}">${monthName(m.k)}</button>`).join('')}</div>
+    <div class="mgrid">
+      <div class="mside">
+        <div class="mhero">
+          <span class="mlab">${monthName(g.k)} · dinero nuevo</span>
+          <span class="mbig ${g.nuevo < 0 ? 'c-r' : ''}">${money(g.nuevo)}</span>
+          ${monthDelta(g.nuevo, prev.nuevo, pn)}
+          ${g.alta ? `<span class="muted mnote">Además, ${money(g.alta)} de saldo que ya tenían las cuentas al darlas de alta.</span>` : ''}
+        </div>
+        <div class="mtiles">
+          ${tile('Llegó al disponible', 'b', money(g.cobrado), monthDelta(g.cobrado, prev.cobrado, pn), ICON.wallet)}
+          ${tile('Retirado', 'g', money(g.retirado), monthDelta(g.retirado, prev.retirado, pn), ICON.out)}
+          ${tile('Cuentas nuevas', '', String(g.cuentas), `<span class="mdelta">Coste SIM ${money(g.sim)}</span>`, ICON.users)}
+          ${tile('Baneadas', g.baneadas ? 'r' : '', String(g.baneadas), monthDelta(g.baneadas, prev.baneadas, pn, true), ICON.ban)}
+        </div>
+        <div class="mneto"><span>Neto del mes <span class="muted">(dinero nuevo − coste SIM)</span></span><b class="${g.neto < 0 ? 'c-r' : 'c-g'}">${money(g.neto)}</b></div>
+      </div>
+      <div class="mmain">
+        ${monthChart(months, g.k)}
+        <div class="legend"><span><i style="background:var(--orange)"></i>Dinero nuevo</span><span><i style="background:var(--fg-2);opacity:.45"></i>Saldo al dar de alta</span><span><i style="background:var(--blue)"></i>Llegó al disponible</span><span><i style="background:var(--green)"></i>Retirado</span></div>
+      </div>
+    </div>
+    <div class="mgrid2">
+      <div>
+        <h3 class="mh3">Cuentas que más aportaron en ${monthName(g.k).split(' ')[0].toLowerCase()}</h3>
+        ${top.length ? `<ul class="bars">${top.map(([id, v]) => `<li><button type="button" data-open="${esc(id)}" title="${esc(accName(id))}">${esc(accName(id))}</button><div class="track"><span style="width:${v / tmax * 100}%;background:var(--orange)"></span></div><span class="amt">${money(v)}</span></li>`).join('')}</ul>`
+          : '<p class="muted" style="margin:0">Ninguna cuenta ha sumado dinero nuevo este mes todavía.</p>'}
+      </div>
+      <div>
+        <h3 class="mh3">Mes a mes</h3>
+        <div class="mrows" role="list">
+          <div class="mrow mrow-h" aria-hidden="true"><span>Mes</span><span>Nuevo</span><span>Disponible</span><span>Retirado</span><span>Neto</span></div>
+          ${months.slice(-12).reverse().map(m => `<button type="button" role="listitem" class="mrow${m.k === g.k ? ' on' : ''}" data-month="${m.k}" aria-label="${monthName(m.k)}: nuevo ${money(m.nuevo)}, disponible ${money(m.cobrado)}, retirado ${money(m.retirado)}, neto ${money(m.neto)}"><span>${monthName(m.k)}<small class="muted">${m.cuentas} ${m.cuentas === 1 ? 'cuenta nueva' : 'cuentas nuevas'}${m.baneadas ? ` · <span class="c-r">${m.baneadas} ${m.baneadas === 1 ? 'baneada' : 'baneadas'}</span>` : ''}</small></span><span class="num c-o">${money(m.nuevo)}</span><span class="num c-b">${money(m.cobrado)}</span><span class="num c-g">${money(m.retirado)}</span><span class="num ${m.neto < 0 ? 'c-r' : ''}"><b>${money(m.neto)}</b></span></button>`).join('')}
+        </div>
+      </div>
+    </div>
+    <p class="muted mfoot">Se calcula con los movimientos de saldo (por su fecha) y con los cambios guardados en el historial de cada cuenta (retiradas, saldo pendiente y baneos). Las cuentas nuevas cuentan por su fecha de registro.${failed ? ' <span class="c-r">No se pudo leer el historial de alguna cuenta.</span>' : ''}</p>
+  </div>`;
+}
+$('#monthly').addEventListener('click', e => {
+  const o = e.target.closest('[data-open]'); if (o) { openDetail(o.dataset.open); return; }
+  const m = e.target.closest('[data-month]'); if (m) { MonthUI.sel = m.dataset.month; renderMonthly(); const f = $(`#monthly .mchips [data-month="${MonthUI.sel}"]`); if (m.matches('.chip')) f?.focus(); else if (m.matches('.mrow')) $(`#monthly .mrow[data-month="${MonthUI.sel}"]`)?.focus(); }
+});
+{ let narrow = window.innerWidth < 560; window.addEventListener('resize', () => { const n = window.innerWidth < 560; if (n !== narrow) { narrow = n; renderMonthly(); } }); }
+$('#monthly').addEventListener('keydown', e => {
+  const m = e.target.closest('g[data-month]');
+  if (m && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); MonthUI.sel = m.dataset.month; renderMonthly(); $(`#monthly g[data-month="${MonthUI.sel}"]`)?.focus(); }
+});
+
 function renderFilters() {
   const all = [...Store.accounts.values()];
   $('#chips').innerHTML = CHIPS.map(c => `<button class="chip" type="button" data-chip="${c.k}" aria-pressed="${UI.chip === c.k}">${c.dot ? `<span class="d" style="background:${c.dot}"></span>` : ''}${c.label}<span class="n">${all.filter(c.fn).length}</span></button>`).join('');
@@ -1655,7 +1914,7 @@ function renderList() {
 let raf = 0;
 function changed() {
   if (raf) return;
-  raf = requestAnimationFrame(() => { raf = 0; renderBadges(); renderKpis(); renderOverview(); renderFilters(); renderList(); if (UI.detailId) renderDetail(); });
+  raf = requestAnimationFrame(() => { raf = 0; renderBadges(); renderKpis(); renderOverview(); renderMonthly(); renderFilters(); renderList(); if (UI.detailId) renderDetail(); });
 }
 
 /* ---------- Avisos ---------- */
