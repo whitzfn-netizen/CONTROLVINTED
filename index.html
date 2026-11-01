@@ -1712,7 +1712,7 @@ function monthChart(months, sel) {
     s += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" class="${i ? 'grid' : 'base'}"/><text x="${L - 6}" y="${yy + 4}" class="ax" text-anchor="end">${shortMoney(v)}</text>`;
   }
   list.forEach((g, i) => {
-    const cx = L + gw * i + gw / 2, on = g.k === sel, x0 = cx - bw * 1.5 - gap;
+    const cx = L + gw * i + gw / 2, on = sel === 'all' || g.k === sel, x0 = cx - bw * 1.5 - gap;
     const nv = Math.max(0, g.nuevo);
     const bars = [
       { x: x0, parts: [[g.alta, 'alta'], [nv, 'nuevo']], label: nv, top: nv + g.alta },
@@ -1742,10 +1742,22 @@ function renderMonthly() {
   if (!all.length) { el.innerHTML = ''; return; }
   const ready = monthEnsure();
   const months = monthlyData();
-  if (!months.some(g => g.k === MonthUI.sel)) MonthUI.sel = months[months.length - 1].k;
-  const i = months.findIndex(g => g.k === MonthUI.sel), g = months[i];
-  const prev = months[i - 1] || { nuevo: 0, retirado: 0, cobrado: 0, cuentas: 0, baneadas: 0, neto: 0, k: shiftMonth(g.k, -1) };
+  if (MonthUI.sel !== 'all' && !months.some(g => g.k === MonthUI.sel)) MonthUI.sel = 'all';
+  const isAll = MonthUI.sel === 'all', firstName = monthName(months[0].k).split(' ')[0].toLowerCase();
+  // «Total»: suma de todos los meses.
+  const sumAll = () => {
+    const t = { k: 'all', nuevo: 0, alta: 0, retirado: 0, cobrado: 0, cuentas: 0, sim: 0, baneadas: 0, neto: 0, acc: new Map() };
+    for (const m of months) {
+      for (const f of ['nuevo', 'alta', 'retirado', 'cobrado', 'cuentas', 'sim', 'baneadas', 'neto']) t[f] += m[f];
+      for (const [id, v] of m.acc) t.acc.set(id, (t.acc.get(id) || 0) + v);
+    }
+    return t;
+  };
+  const i = isAll ? -1 : months.findIndex(g => g.k === MonthUI.sel), g = isAll ? sumAll() : months[i];
+  const prev = (i > 0 && months[i - 1]) || { nuevo: 0, retirado: 0, cobrado: 0, cuentas: 0, baneadas: 0, neto: 0, k: isAll ? months[0].k : shiftMonth(g.k, -1) };
   const pn = i > 0 ? monthName(prev.k).split(' ')[0].toLowerCase() : null;
+  const delta = (a, b, up) => isAll ? `<span class="mdelta">Desde ${firstName}</span>` : monthDelta(a, b, pn, up);
+  const gName = isAll ? 'Total' : monthName(g.k), gShort = isAll ? 'en total' : 'en ' + monthName(g.k).split(' ')[0].toLowerCase();
   const failed = [...MonthUI.hist.values()].some(c => c.err);
   const tile = (lab, cls, val, sub, ico) => `<div class="mtile"><div class="mt-h"><span class="ico ${cls}">${ico}</span>${lab}</div><div class="mt-v ${cls ? 'c-' + cls : ''}">${val}</div>${sub}</div>`;
   const top = [...g.acc.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 5);
@@ -1753,22 +1765,25 @@ function renderMonthly() {
   const accName = id => Store.accounts.get(id)?.name || 'Cuenta';
   el.innerHTML = `<div class="panel chart">
     <div class="chart-h"><h2>Resumen mensual</h2><span>${ready ? `Cómo ha ido cada mes en ${PLAT()}` : 'Calculando con el historial…'}</span></div>
-    <div class="mchips" role="group" aria-label="Elegir mes">${months.slice(-12).map(m => `<button type="button" class="chip" data-month="${m.k}" aria-pressed="${m.k === g.k}">${monthName(m.k)}</button>`).join('')}</div>
+    <div class="mchips" role="group" aria-label="Elegir mes"><button type="button" class="chip" data-month="all" aria-pressed="${isAll}">Total</button>${months.slice(-12).map(m => `<button type="button" class="chip" data-month="${m.k}" aria-pressed="${m.k === g.k}">${monthName(m.k)}</button>`).join('')}</div>
     <div class="mgrid">
       <div class="mside">
         <div class="mhero">
-          <span class="mlab">${monthName(g.k)} · dinero nuevo</span>
+          ${isAll ? `<span class="mlab">Total desde ${firstName} · dinero generado</span>
+          <span class="mbig">${money(g.nuevo + g.alta)}</span>
+          ${g.alta ? `<span class="muted mnote">${money(g.nuevo)} de dinero nuevo + ${money(g.alta)} que ya tenían las cuentas al darlas de alta.</span>` : ''}`
+          : `<span class="mlab">${gName} · dinero nuevo</span>
           <span class="mbig ${g.nuevo < 0 ? 'c-r' : ''}">${money(g.nuevo)}</span>
           ${monthDelta(g.nuevo, prev.nuevo, pn)}
-          ${g.alta ? `<span class="muted mnote">Además, ${money(g.alta)} de saldo que ya tenían las cuentas al darlas de alta.</span>` : ''}
+          ${g.alta ? `<span class="muted mnote">Además, ${money(g.alta)} de saldo que ya tenían las cuentas al darlas de alta.</span>` : ''}`}
         </div>
         <div class="mtiles">
-          ${tile('Llegó al disponible', 'b', money(g.cobrado), monthDelta(g.cobrado, prev.cobrado, pn), ICON.wallet)}
-          ${tile('Retirado', 'g', money(g.retirado), monthDelta(g.retirado, prev.retirado, pn), ICON.out)}
+          ${tile('Llegó al disponible', 'b', money(g.cobrado), delta(g.cobrado, prev.cobrado), ICON.wallet)}
+          ${tile('Retirado', 'g', money(g.retirado), delta(g.retirado, prev.retirado), ICON.out)}
           ${tile('Cuentas nuevas', '', String(g.cuentas), `<span class="mdelta">Coste SIM ${money(g.sim)}</span>`, ICON.users)}
-          ${tile('Baneadas', g.baneadas ? 'r' : '', String(g.baneadas), monthDelta(g.baneadas, prev.baneadas, pn, true), ICON.ban)}
+          ${tile('Baneadas', g.baneadas ? 'r' : '', String(g.baneadas), delta(g.baneadas, prev.baneadas, true), ICON.ban)}
         </div>
-        <div class="mneto"><span>Neto del mes <span class="muted">(dinero nuevo − coste SIM)</span></span><b class="${g.neto < 0 ? 'c-r' : 'c-g'}">${money(g.neto)}</b></div>
+        <div class="mneto"><span>${isAll ? 'Neto total' : 'Neto del mes'} <span class="muted">(dinero nuevo − coste SIM)</span></span><b class="${g.neto < 0 ? 'c-r' : 'c-g'}">${money(g.neto)}</b></div>
       </div>
       <div class="mmain">
         ${monthChart(months, g.k)}
@@ -1777,9 +1792,9 @@ function renderMonthly() {
     </div>
     <div class="mgrid2">
       <div>
-        <h3 class="mh3">Cuentas que más aportaron en ${monthName(g.k).split(' ')[0].toLowerCase()}</h3>
+        <h3 class="mh3">Cuentas que más aportaron ${gShort}</h3>
         ${top.length ? `<ul class="bars">${top.map(([id, v]) => `<li><button type="button" data-open="${esc(id)}" title="${esc(accName(id))}">${esc(accName(id))}</button><div class="track"><span style="width:${v / tmax * 100}%;background:var(--orange)"></span></div><span class="amt">${money(v)}</span></li>`).join('')}</ul>`
-          : '<p class="muted" style="margin:0">Ninguna cuenta ha sumado dinero nuevo este mes todavía.</p>'}
+          : `<p class="muted" style="margin:0">Ninguna cuenta ha sumado dinero nuevo ${isAll ? 'todavía' : 'este mes todavía'}.</p>`}
       </div>
       <div>
         <h3 class="mh3">Mes a mes</h3>
